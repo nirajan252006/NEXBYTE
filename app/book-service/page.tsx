@@ -1,0 +1,348 @@
+"use client";
+
+import { useState } from "react";
+import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
+import { services, business } from "@/lib/data";
+import { Calendar, User, Phone, Mail, Clock, MessageSquare, CheckCircle, Star } from "lucide-react";
+import { dbHelper } from "@/lib/dbHelper";
+import StarRating from "@/components/ui/StarRating";
+
+export default function BookServicePage() {
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [serviceName, setServiceName] = useState(services[0]?.title || "Laptop Repair");
+  const [date, setDate] = useState("");
+  const [timeSlot, setTimeSlot] = useState("10:30 AM");
+  const [notes, setNotes] = useState("");
+
+  const [loading, setLoading] = useState(false);
+  const [bookingSuccess, setBookingSuccess] = useState(false);
+  const [createdBookingId, setCreatedBookingId] = useState("");
+
+  // Rating Feedback popup embedded inside success screen
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState("");
+  const [city, setCity] = useState("Bengaluru");
+  const [submittingReview, setSubmittingReview] = useState(false);
+  const [reviewSuccess, setReviewSuccess] = useState(false);
+
+  const handleBookingSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name || !phone || !date) return;
+    setLoading(true);
+
+    try {
+      // Save to database
+      const saved = await dbHelper.bookings.create({
+        customerName: name,
+        phone,
+        email,
+        productName: serviceName,
+        bookingType: "service",
+        notes,
+        status: "new",
+        city,
+        state: "Karnataka",
+        timeline: [
+          { status: "new", timestamp: new Date().toISOString(), message: `Doorstep service scheduled: ${serviceName}` }
+        ]
+      });
+
+      setCreatedBookingId(saved.bookingId);
+      setBookingSuccess(true);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to submit service booking. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReviewSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!comment) return;
+    setSubmittingReview(true);
+
+    try {
+      const res = await fetch("/api/reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerName: name,
+          phone,
+          email,
+          city,
+          serviceUsed: serviceName,
+          overallExperience: comment,
+          rating,
+          reviewMessage: comment,
+          recommend: rating >= 4,
+          source: "post_service_popup"
+        })
+      });
+
+      if (res.ok) {
+        setReviewSuccess(true);
+      } else {
+        alert("Failed to save review. Thank you for your feedback anyway!");
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
+  return (
+    <>
+      <Navbar />
+
+      <main className="relative min-h-screen bg-nex-black pt-28 pb-16 overflow-hidden">
+        {/* Glow decoration */}
+        <div className="pointer-events-none absolute -top-40 left-1/4 h-[500px] w-[500px] rounded-full bg-nex-blue/10 blur-[120px]" />
+        <div className="pointer-events-none absolute bottom-40 right-1/4 h-[500px] w-[500px] rounded-full bg-nex-blueLight/10 blur-[120px]" />
+
+        <div className="relative z-10 mx-auto max-w-7xl px-5 sm:px-8">
+          
+          <div className="text-center max-w-3xl mx-auto mb-12">
+            <span className="section-eyebrow">
+              <span className="h-1.5 w-1.5 rounded-full bg-nex-blueLight shadow-glow-blue" />
+              Instant IT Scheduling
+            </span>
+            <h1 className="font-display text-4xl font-bold tracking-tight text-white sm:text-6xl">
+              Book a <span className="text-gradient-blue">Service.</span>
+            </h1>
+            <p className="mt-4 text-base text-nex-mist leading-relaxed">
+              Schedule diagnostics, operating system installations, networking setup, or motherboard-level repairs in Bengaluru &amp; Tumkur service centers.
+            </p>
+          </div>
+
+          <div className="max-w-xl mx-auto">
+            {bookingSuccess ? (
+              <div className="glass-card p-8 bg-nex-ink border border-white/5 rounded-3xl text-center space-y-6 shadow-glow-blue">
+                <CheckCircle className="h-12 w-12 text-green-400 mx-auto animate-bounce" />
+                
+                <div>
+                  <h3 className="font-display text-xl font-bold text-white">Booking Confirmed!</h3>
+                  <p className="text-xs text-nex-mist mt-1.5 leading-relaxed">
+                    Your request has been saved in our database. Reference ID is:
+                  </p>
+                  <div className="mt-3.5 inline-block rounded-xl bg-white/[0.04] border border-white/10 px-4 py-2 text-sm font-mono font-bold text-nex-blueLight shadow-inner">
+                    {createdBookingId}
+                  </div>
+                </div>
+
+                {/* Rating Feedback embedded */}
+                <div className="border-t border-white/10 pt-6 text-left">
+                  {reviewSuccess ? (
+                    <div className="text-center py-4 text-xs text-green-400 font-bold">
+                      Thank you! Your feedback review has been submitted for approval.
+                    </div>
+                  ) : (
+                    <form onSubmit={handleReviewSubmit} className="space-y-4">
+                      <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <Star className="h-4.5 w-4.5 text-yellow-400 fill-yellow-400" /> Rate Our Booking Experience
+                      </h4>
+                      
+                      <div className="flex gap-2 items-center">
+                        <span className="text-xs text-nex-mist">Your Rating:</span>
+                        <StarRating rating={rating} onChange={setRating} size="md" />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label htmlFor="bk-city" className="text-[10px] text-nex-mist uppercase font-semibold">Your Location City</label>
+                        <input
+                          id="bk-city"
+                          type="text"
+                          required
+                          value={city}
+                          onChange={(e) => setCity(e.target.value)}
+                          placeholder="e.g. Tumkur"
+                          className="w-full rounded-xl bg-white/[0.03] border border-white/10 px-3.5 py-2.5 text-xs text-white focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label htmlFor="bk-feedback" className="text-[10px] text-nex-mist uppercase font-semibold">Experience Comment</label>
+                        <textarea
+                          id="bk-feedback"
+                          required
+                          value={comment}
+                          onChange={(e) => setComment(e.target.value)}
+                          placeholder="Tell us what you liked about booking or service options..."
+                          rows={3}
+                          className="w-full rounded-xl bg-white/[0.03] border border-white/10 px-3.5 py-2.5 text-xs text-white focus:outline-none resize-none"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={submittingReview}
+                        className="btn-primary w-full text-center text-xs !py-2.5"
+                      >
+                        {submittingReview ? "Submitting review..." : "Submit Review & Exit"}
+                      </button>
+                    </form>
+                  )}
+                </div>
+
+                <div className="pt-2 text-center">
+                  <button
+                    onClick={() => {
+                      setBookingSuccess(false);
+                      setName("");
+                      setPhone("");
+                      setEmail("");
+                      setNotes("");
+                    }}
+                    className="text-xs text-nex-blueLight hover:underline font-bold"
+                  >
+                    Schedule another service
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="glass-card p-6 md:p-8 bg-nex-ink border border-white/5 rounded-2xl shadow-glow-blue">
+                <form onSubmit={handleBookingSubmit} className="space-y-5">
+                  {/* Name */}
+                  <div className="space-y-1">
+                    <label htmlFor="bk-name" className="text-xs font-semibold text-white/85 flex items-center gap-1.5">
+                      <User className="h-3.5 w-3.5 text-nex-blueLight" /> Name *
+                    </label>
+                    <input
+                      id="bk-name"
+                      type="text"
+                      required
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="e.g. Ramesh Kumar"
+                      className="w-full rounded-xl bg-white/[0.04] border border-white/[0.08] px-3.5 py-2.5 text-xs text-white focus:border-nex-blue/50 focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                    {/* Phone */}
+                    <div className="space-y-1">
+                      <label htmlFor="bk-phone" className="text-xs font-semibold text-white/85 flex items-center gap-1.5">
+                        <Phone className="h-3.5 w-3.5 text-nex-blueLight" /> Phone *
+                      </label>
+                      <input
+                        id="bk-phone"
+                        type="tel"
+                        required
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        placeholder="e.g. 8088979706"
+                        className="w-full rounded-xl bg-white/[0.04] border border-white/[0.08] px-3.5 py-2.5 text-xs text-white focus:border-nex-blue/50 focus:outline-none"
+                      />
+                    </div>
+
+                    {/* Email */}
+                    <div className="space-y-1">
+                      <label htmlFor="bk-email" className="text-xs font-semibold text-white/85 flex items-center gap-1.5">
+                        <Mail className="h-3.5 w-3.5 text-nex-blueLight" /> Email (optional)
+                      </label>
+                      <input
+                        id="bk-email"
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="e.g. ramesh@gmail.com"
+                        className="w-full rounded-xl bg-white/[0.04] border border-white/[0.08] px-3.5 py-2.5 text-xs text-white focus:border-nex-blue/50 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Service selection */}
+                  <div className="space-y-1">
+                    <label htmlFor="bk-srv" className="text-xs font-semibold text-white/85">Service Category</label>
+                    <select
+                      id="bk-srv"
+                      value={serviceName}
+                      onChange={(e) => setServiceName(e.target.value)}
+                      className="w-full rounded-xl bg-nex-ink border border-white/[0.08] px-3.5 py-2.5 text-xs text-white focus:border-nex-blue/50 focus:outline-none"
+                    >
+                      {services.map((srv) => (
+                        <option key={srv.id} value={srv.title}>
+                          {srv.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                    {/* Booking Date */}
+                    <div className="space-y-1">
+                      <label htmlFor="bk-date" className="text-xs font-semibold text-white/85 flex items-center gap-1.5">
+                        <Calendar className="h-3.5 w-3.5 text-nex-blueLight" /> Preferred Date *
+                      </label>
+                      <input
+                        id="bk-date"
+                        type="date"
+                        required
+                        value={date}
+                        onChange={(e) => setDate(e.target.value)}
+                        className="w-full rounded-xl bg-white/[0.04] border border-white/[0.08] px-3.5 py-2.5 text-xs text-white focus:border-nex-blue/50 focus:outline-none"
+                      />
+                    </div>
+
+                    {/* Time Slot */}
+                    <div className="space-y-1">
+                      <label htmlFor="bk-time" className="text-xs font-semibold text-white/85 flex items-center gap-1.5">
+                        <Clock className="h-3.5 w-3.5 text-nex-blueLight" /> Preferred Time Slot
+                      </label>
+                      <select
+                        id="bk-time"
+                        value={timeSlot}
+                        onChange={(e) => setTimeSlot(e.target.value)}
+                        className="w-full rounded-xl bg-nex-ink border border-white/[0.08] px-3.5 py-2.5 text-xs text-white focus:border-nex-blue/50 focus:outline-none"
+                      >
+                        <option value="09:30 AM">09:30 AM</option>
+                        <option value="10:30 AM">10:30 AM</option>
+                        <option value="11:30 AM">11:30 AM</option>
+                        <option value="01:30 PM">01:30 PM</option>
+                        <option value="02:30 PM">02:30 PM</option>
+                        <option value="03:30 PM">03:30 PM</option>
+                        <option value="04:30 PM">04:30 PM</option>
+                        <option value="05:30 PM">05:30 PM</option>
+                        <option value="06:30 PM">06:30 PM</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Notes */}
+                  <div className="space-y-1">
+                    <label htmlFor="bk-notes" className="text-xs font-semibold text-white/85">Fault Description / Special Instructions</label>
+                    <textarea
+                      id="bk-notes"
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      placeholder="e.g. Laptop keeps rebooting automatically, or need doorstep collection..."
+                      rows={3}
+                      className="w-full rounded-xl bg-white/[0.04] border border-white/[0.08] px-3.5 py-2.5 text-xs text-white focus:border-nex-blue/50 focus:outline-none resize-none"
+                    />
+                  </div>
+
+                  <div className="pt-2">
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full btn-primary flex items-center justify-center gap-2 text-xs font-bold"
+                    >
+                      {loading ? "Scheduling service..." : "Confirm Booking Instantly"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+          </div>
+
+        </div>
+      </main>
+
+      <Footer />
+    </>
+  );
+}
