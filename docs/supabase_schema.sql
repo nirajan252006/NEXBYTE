@@ -1,0 +1,292 @@
+-- ====================================================================
+-- NEXBYTE TECHNOLOGIES — PRODUCTION SUPABASE POSTGRESQL SCHEMA
+-- Target Database: Supabase PostgreSQL
+-- Realtime Tables: Enabled via supabase_realtime publication
+-- ====================================================================
+
+-- 1. USERS TABLE
+CREATE TABLE IF NOT EXISTS public.users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT UNIQUE NOT NULL,
+  full_name TEXT NOT NULL,
+  phone TEXT,
+  role TEXT DEFAULT 'customer' CHECK (role IN ('customer', 'admin', 'staff')),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2. PRODUCTS TABLE
+CREATE TABLE IF NOT EXISTS public.products (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  category TEXT NOT NULL,
+  price NUMERIC NOT NULL,
+  original_price NUMERIC,
+  discount NUMERIC DEFAULT 0,
+  stock INT DEFAULT 10,
+  condition TEXT DEFAULT 'new' CHECK (condition IN ('new', 'refurbished', 'premium_used')),
+  status TEXT DEFAULT 'show' CHECK (status IN ('show', 'hidden', 'deleted')),
+  featured BOOLEAN DEFAULT FALSE,
+  latest BOOLEAN DEFAULT FALSE,
+  image TEXT,
+  images TEXT[],
+  specs JSONB,
+  description TEXT,
+  warranty TEXT DEFAULT '1 Year NexByte Warranty',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 3. SERVICES TABLE
+CREATE TABLE IF NOT EXISTS public.services (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  category TEXT NOT NULL,
+  price NUMERIC NOT NULL,
+  duration TEXT DEFAULT '2-4 Hours',
+  status TEXT DEFAULT 'enabled' CHECK (status IN ('enabled', 'disabled')),
+  description TEXT,
+  icon TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 4. BOOKINGS TABLE
+CREATE TABLE IF NOT EXISTS public.bookings (
+  id TEXT PRIMARY KEY DEFAULT ('b-' || EXTRACT(EPOCH FROM NOW())::BIGINT),
+  "bookingId" TEXT UNIQUE NOT NULL,
+  "customerName" TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  email TEXT,
+  address TEXT,
+  city TEXT DEFAULT 'Bengaluru',
+  state TEXT DEFAULT 'Karnataka',
+  pincode TEXT DEFAULT '560001',
+  "productId" TEXT,
+  "productName" TEXT NOT NULL,
+  "productCategory" TEXT DEFAULT 'other',
+  configuration TEXT DEFAULT 'Standard',
+  budget TEXT DEFAULT 'N/A',
+  message TEXT,
+  "bookingType" TEXT DEFAULT 'product',
+  status TEXT DEFAULT 'submitted' CHECK (status IN ('submitted', 'pending', 'contacted', 'quoted', 'approved', 'confirmed', 'in_progress', 'completed', 'rejected', 'cancelled')),
+  "assignedTo" TEXT,
+  technician TEXT,
+  notes TEXT,
+  "replyMessage" TEXT,
+  "replyDate" TIMESTAMPTZ,
+  "replyBy" TEXT,
+  quantity INT DEFAULT 1,
+  "preferredContact" TEXT DEFAULT 'WhatsApp',
+  "preferredDate" DATE DEFAULT CURRENT_DATE,
+  "preferredTime" TEXT DEFAULT '10:30 AM',
+  device TEXT DEFAULT 'Web Client',
+  browser TEXT DEFAULT 'Chrome / Web',
+  ip TEXT,
+  timeline JSONB DEFAULT '[]'::jsonb,
+  "createdAt" TIMESTAMPTZ DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ DEFAULT NOW(),
+  customer_name TEXT,
+  service_name TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 5. REVIEWS TABLE
+CREATE TABLE IF NOT EXISTS public.reviews (
+  id TEXT PRIMARY KEY DEFAULT ('rev-' || EXTRACT(EPOCH FROM NOW())::BIGINT),
+  customer_name TEXT NOT NULL,
+  phone TEXT,
+  email TEXT,
+  city TEXT DEFAULT 'Tumkur',
+  service_used TEXT,
+  product_purchased TEXT,
+  overall_experience TEXT NOT NULL,
+  rating INT CHECK (rating BETWEEN 1 AND 5),
+  review_message TEXT NOT NULL,
+  recommend BOOLEAN DEFAULT TRUE,
+  image_urls TEXT[],
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  verified BOOLEAN DEFAULT FALSE,
+  featured BOOLEAN DEFAULT FALSE,
+  source TEXT DEFAULT 'public_form',
+  likes_count INT DEFAULT 0,
+  helpful_count INT DEFAULT 0,
+  admin_reply TEXT,
+  admin_reply_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 6. INTERNSHIPS TABLE
+CREATE TABLE IF NOT EXISTS public.internships (
+  id TEXT PRIMARY KEY DEFAULT ('int-' || EXTRACT(EPOCH FROM NOW())::BIGINT),
+  student_name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  college TEXT NOT NULL,
+  domain TEXT NOT NULL,
+  resume_url TEXT,
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'under_review', 'approved', 'rejected', 'completed')),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 7. TRAINING ENROLLMENTS TABLE
+CREATE TABLE IF NOT EXISTS public.training (
+  id TEXT PRIMARY KEY DEFAULT ('tr-' || EXTRACT(EPOCH FROM NOW())::BIGINT),
+  course_title TEXT NOT NULL,
+  student_name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  batch TEXT DEFAULT 'Upcoming Batch',
+  trainer TEXT DEFAULT 'Niranjan M.',
+  attendance_status TEXT DEFAULT 'enrolled',
+  certificate_url TEXT,
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'enrolled', 'completed', 'cancelled')),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 8. CONTACT ENQUIRIES TABLE
+CREATE TABLE IF NOT EXISTS public.contacts (
+  id TEXT PRIMARY KEY DEFAULT ('ct-' || EXTRACT(EPOCH FROM NOW())::BIGINT),
+  name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  message TEXT NOT NULL,
+  status TEXT DEFAULT 'unread' CHECK (status IN ('unread', 'read', 'replied', 'archived')),
+  admin_reply TEXT,
+  admin_reply_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 9. LAPTOP ENQUIRIES TABLE
+CREATE TABLE IF NOT EXISTS public.laptop_enquiries (
+  id TEXT PRIMARY KEY DEFAULT ('lp-' || EXTRACT(EPOCH FROM NOW())::BIGINT),
+  customer_name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  email TEXT,
+  budget TEXT NOT NULL,
+  laptop_type TEXT NOT NULL,
+  message TEXT,
+  status TEXT DEFAULT 'new' CHECK (status IN ('new', 'contacted', 'quoted', 'closed')),
+  admin_notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 10. NOTIFICATIONS TABLE
+CREATE TABLE IF NOT EXISTS public.notifications (
+  id TEXT PRIMARY KEY DEFAULT ('n-' || EXTRACT(EPOCH FROM NOW())::BIGINT),
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  status TEXT DEFAULT 'unread' CHECK (status IN ('unread', 'read')),
+  type TEXT DEFAULT 'general',
+  meta JSONB,
+  customer_email TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 11. CERTIFICATES TABLE
+CREATE TABLE IF NOT EXISTS public.certificates (
+  id TEXT PRIMARY KEY DEFAULT ('c-' || EXTRACT(EPOCH FROM NOW())::BIGINT),
+  "registrationId" TEXT UNIQUE NOT NULL,
+  "certificateId" TEXT UNIQUE NOT NULL,
+  "studentName" TEXT NOT NULL,
+  "photoUrl" TEXT,
+  "courseTitle" TEXT NOT NULL,
+  "trainingType" TEXT DEFAULT 'Professional Training',
+  "internshipType" TEXT DEFAULT 'N/A',
+  "projectTitle" TEXT,
+  "completionDate" DATE NOT NULL,
+  status TEXT DEFAULT 'verified' CHECK (status IN ('verified', 'revoked', 'pending')),
+  "phoneNumber" TEXT,
+  email TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 12. CUSTOMERS TABLE
+CREATE TABLE IF NOT EXISTS public.customers (
+  id TEXT PRIMARY KEY DEFAULT ('cust-' || EXTRACT(EPOCH FROM NOW())::BIGINT),
+  "customerId" TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL,
+  phone TEXT UNIQUE NOT NULL,
+  email TEXT,
+  address TEXT,
+  city TEXT DEFAULT 'Bengaluru',
+  "totalBookings" INT DEFAULT 0,
+  "reviewsCount" INT DEFAULT 0,
+  "certificatesCount" INT DEFAULT 0,
+  "productsPurchased" TEXT,
+  "servicesTaken" TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 13. GALLERY TABLE
+CREATE TABLE IF NOT EXISTS public.gallery (
+  id TEXT PRIMARY KEY DEFAULT ('gal-' || EXTRACT(EPOCH FROM NOW())::BIGINT),
+  title TEXT NOT NULL,
+  url TEXT NOT NULL,
+  category TEXT DEFAULT 'store',
+  visible BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 14. CMS CONTENT TABLE
+CREATE TABLE IF NOT EXISTS public.cms_content (
+  id TEXT PRIMARY KEY DEFAULT 'main',
+  hero JSONB NOT NULL,
+  seo JSONB NOT NULL,
+  footer JSONB NOT NULL,
+  contact_info JSONB NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 15. ACTIVITY LOGS TABLE
+CREATE TABLE IF NOT EXISTS public.activity_logs (
+  id TEXT PRIMARY KEY DEFAULT ('act-' || EXTRACT(EPOCH FROM NOW())::BIGINT),
+  user_name TEXT NOT NULL,
+  role TEXT DEFAULT 'admin',
+  action TEXT NOT NULL,
+  details TEXT,
+  ip TEXT DEFAULT '127.0.0.1',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ====================================================================
+-- REALTIME PUBLICATION SETUP
+-- ====================================================================
+DROP PUBLICATION IF EXISTS supabase_realtime;
+CREATE PUBLICATION supabase_realtime FOR TABLE 
+  public.bookings, 
+  public.reviews, 
+  public.contacts, 
+  public.laptop_enquiries, 
+  public.internships, 
+  public.training, 
+  public.notifications, 
+  public.products, 
+  public.services, 
+  public.certificates, 
+  public.customers;
+
+-- ====================================================================
+-- ROW LEVEL SECURITY (RLS) POLICIES
+-- ====================================================================
+ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.certificates ENABLE ROW LEVEL SECURITY;
+
+-- Products RLS: Anyone can view active products; only authenticated admins can write
+CREATE POLICY "Public Read Active Products" ON public.products FOR SELECT USING (status = 'show');
+CREATE POLICY "Admin All Products Access" ON public.products FOR ALL USING (auth.jwt() ->> 'role' = 'admin' OR auth.role() = 'service_role');
+
+-- Reviews RLS: Public can view approved reviews; users can submit pending reviews
+CREATE POLICY "Public Read Approved Reviews" ON public.reviews FOR SELECT USING (status = 'approved');
+CREATE POLICY "Public Insert Pending Reviews" ON public.reviews FOR INSERT WITH CHECK (status = 'pending');
+CREATE POLICY "Admin All Reviews Access" ON public.reviews FOR ALL USING (auth.role() = 'service_role');
+
+-- Bookings RLS: Customers can insert bookings & view own bookings by phone/ID; Admins full access
+CREATE POLICY "Customer Insert Bookings" ON public.bookings FOR INSERT WITH CHECK (true);
+CREATE POLICY "Admin All Bookings Access" ON public.bookings FOR ALL USING (auth.role() = 'service_role');
+
+-- Certificates RLS: Public verification of active certificates
+CREATE POLICY "Public Verify Active Certificates" ON public.certificates FOR SELECT USING (status = 'verified');
+CREATE POLICY "Admin All Certificates Access" ON public.certificates FOR ALL USING (auth.role() = 'service_role');

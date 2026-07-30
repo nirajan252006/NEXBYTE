@@ -471,7 +471,7 @@ export const dbHelper = {
         preferredTime: booking.preferredTime || "10:30 AM",
         device: "Web Client",
         browser: "Chrome / Web",
-        ip: "127.0.0.1",
+        ip: booking.ip || "Client IP",
         createdAt: now,
         updatedAt: now,
         timeline: booking.timeline || [
@@ -509,7 +509,7 @@ export const dbHelper = {
           role: "customer",
           action: "Customer Booked Product/Service",
           details: `Booking ID: ${newBooking.bookingId} | Item: ${newBooking.productName}`,
-          ip: "127.0.0.1"
+          ip: "Client IP"
         });
 
         notifyDataChange("bookings", "insert", data);
@@ -540,7 +540,7 @@ export const dbHelper = {
         role: "customer",
         action: "Customer Booked Product/Service",
         details: `Booking ID: ${newBooking.bookingId} | Item: ${newBooking.productName}`,
-        ip: "127.0.0.1"
+        ip: "Client IP"
       });
 
       notifyDataChange("bookings", "insert", newBooking);
@@ -592,7 +592,7 @@ export const dbHelper = {
           role: "admin",
           action: "Admin Updated Booking",
           details: `Booking ${existing.bookingId || id} status changed to ${updates.status}`,
-          ip: "127.0.0.1"
+          ip: "Client IP"
         });
 
         await dbHelper.notifications.create({
@@ -663,7 +663,7 @@ export const dbHelper = {
         role: "admin",
         action: "Product Created",
         details: `Created product "${savedData.title}" (Price: ₹${savedData.price}, Stock: ${savedData.stock})`,
-        ip: "127.0.0.1"
+        ip: "Client IP"
       });
 
       if (savedData && savedData.stock !== undefined) {
@@ -703,7 +703,7 @@ export const dbHelper = {
         role: "admin",
         action: "Product Updated",
         details: `Updated product "${savedData?.title || id}" specifications/price/stock`,
-        ip: "127.0.0.1"
+        ip: "Client IP"
       });
 
       // Stock Alert Logic
@@ -734,7 +734,7 @@ export const dbHelper = {
         role: "admin",
         action: "Product Trashed",
         details: `Moved product ${id} to Trash`,
-        ip: "127.0.0.1"
+        ip: "Client IP"
       });
       notifyDataChange("products", "delete", { id, status: "deleted" });
       return updated;
@@ -747,7 +747,7 @@ export const dbHelper = {
         role: "admin",
         action: "Product Restored",
         details: `Restored product ${id} from Trash`,
-        ip: "127.0.0.1"
+        ip: "Client IP"
       });
       notifyDataChange("products", "update", updated);
       return updated;
@@ -1128,7 +1128,7 @@ export const dbHelper = {
         role: "customer",
         action: "Customer Submitted Review",
         details: `Rating: ${savedData.rating}★ | Message: "${(savedData.review_message || "").substring(0, 40)}..."`,
-        ip: "127.0.0.1"
+        ip: "Client IP"
       });
 
       // 3. Emit Realtime Notification Event
@@ -1156,7 +1156,7 @@ export const dbHelper = {
           role: "admin",
           action: "Admin Approved Review",
           details: `Approved review ${id} by ${savedData.customer_name}`,
-          ip: "127.0.0.1"
+          ip: "Client IP"
         });
         await dbHelper.notifications.create({
           title: "✅ Review Approved!",
@@ -1170,7 +1170,7 @@ export const dbHelper = {
           role: "admin",
           action: "Admin Rejected Review",
           details: `Rejected review ${id}. Reason: ${updates.rejection_reason || "None specified"}`,
-          ip: "127.0.0.1"
+          ip: "Client IP"
         });
         await dbHelper.notifications.create({
           title: "❌ Review Update",
@@ -1184,7 +1184,7 @@ export const dbHelper = {
           role: "admin",
           action: "Admin Requested Modification",
           details: `Requested modification on review ${id}. Note: ${updates.modification_reason || "Please update details"}`,
-          ip: "127.0.0.1"
+          ip: "Client IP"
         });
         await dbHelper.notifications.create({
           title: "📝 Action Required: Update Your Review",
@@ -1198,7 +1198,7 @@ export const dbHelper = {
           role: "admin",
           action: "Admin Replied to Review",
           details: `Replied to review ${id}: "${(updates.admin_reply || "").substring(0, 30)}..."`,
-          ip: "127.0.0.1"
+          ip: "Client IP"
         });
         if (updates.admin_reply) {
           await dbHelper.notifications.create({
@@ -1214,7 +1214,7 @@ export const dbHelper = {
           role: "admin",
           action: updates.featured ? "Admin Featured Review" : "Admin Unfeatured Review",
           details: `Set review ${id} featured = ${updates.featured}`,
-          ip: "127.0.0.1"
+          ip: "Client IP"
         });
       }
 
