@@ -315,7 +315,7 @@ export default function Navbar() {
               </div>
             ) : (
               <Link
-                href="/login?role=user"
+                href="/customer/signin"
                 className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/5 px-3.5 py-1.5 text-xs font-bold text-slate-700 dark:text-white hover:bg-slate-200 dark:hover:bg-white/10 transition-all"
               >
                 Sign In
@@ -430,10 +430,10 @@ export default function Navbar() {
           </Link>
 
           <Link
-            href={isAuthenticated ? "/customer/profile" : "/login?role=user"}
+            href={isAuthenticated ? "/customer/profile" : "/customer/signin"}
             className={cn(
               "flex flex-col items-center gap-0.5 py-1 text-[10px] font-bold transition-colors",
-              isActive("/customer/profile") || isActive("/login") ? "text-nex-blue dark:text-nex-blueLight" : "text-slate-500 dark:text-slate-400"
+              isActive("/customer/profile") || isActive("/customer/signin") ? "text-nex-blue dark:text-nex-blueLight" : "text-slate-500 dark:text-slate-400"
             )}
           >
             <User className="h-5 w-5" />

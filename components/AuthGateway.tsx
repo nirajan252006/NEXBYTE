@@ -152,7 +152,7 @@ export default function AuthGateway({
               </ul>
             </div>
             <Link
-              href={hasUserSession ? "/customer" : "/login?role=user"}
+              href={hasUserSession ? "/customer" : "/customer/signin"}
               className="btn-primary w-full py-3 text-xs font-bold flex items-center justify-center gap-2 shadow-glow-blue group-hover:shadow-[0_0_25px_rgba(30,94,255,0.5)]"
             >
               <span>{hasUserSession ? "Go to Customer Website" : "Continue as Customer"}</span>
