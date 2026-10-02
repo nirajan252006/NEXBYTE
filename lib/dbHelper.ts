@@ -69,7 +69,7 @@ if (!globalRef.__nexbyteMockDb) {
         phone: "9876543210",
         email: "customer@nexbyte.com",
         service_name: "Laptop Keyboard & Trackpad Repair",
-        status: "pending",
+        status: "new",
         technician: "",
         booking_date: "2026-07-20",
         booking_time: "10:30 AM",
@@ -208,7 +208,7 @@ if (!globalRef.__nexbyteMockDb) {
       {
         id: "c-1",
         registrationId: "NBT-TR-2026-001",
-        certificateId: "CERT-908123",
+        certificateId: "NBT-TR-2026-001",
         studentName: "Niranjan M",
         photoUrl: "/images/logo-icon.png",
         courseTitle: "Full Stack Web Development",
@@ -268,20 +268,63 @@ if (!globalRef.__nexbyteMockDb) {
       }
     ],
     inventory: [],
-    activity_logs: []
+    activity_logs: [],
+    certificate_sequences: {},
+    resellers: [
+      {
+        id: "res-1",
+        business_name: "TechZone Reseller",
+        owner_name: "Kiran B.",
+        email: "reseller@nexbyte.com",
+        phone: "9876501234",
+        address: "15, MG Road",
+        city: "Bengaluru",
+        state: "Karnataka",
+        business_type: "individual",
+        gstin: "",
+        description: "Refurbished laptops and gaming peripherals.",
+        status: "active",
+        role: "reseller",
+        created_at: new Date().toISOString()
+      }
+    ],
+    orders: [],
+    cart_items: [],
+    conversations: [],
+    messages: []
   };
+}
+
+function safeParse<T>(value: string | null | undefined, fallback: T): T {
+  if (
+    value == null ||
+    value === "" ||
+    value === "undefined" ||
+    value === "null"
+  ) {
+    return fallback;
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return parsed != null ? (parsed as T) : fallback;
+  } catch (error) {
+    console.error("Invalid stored JSON in localStorage:", error);
+    return fallback;
+  }
 }
 
 const getMockData = (key: string): any[] => {
   if (typeof window !== "undefined") {
     const saved = localStorage.getItem(`nexbyte_${key}`);
+    const defaultData = globalRef.__nexbyteMockDb?.[key] || [];
     if (saved) {
-      return JSON.parse(saved);
+      const parsed = safeParse<any[]>(saved, null as any);
+      if (Array.isArray(parsed)) return parsed;
     }
-    // Seed and return
-    localStorage.setItem(`nexbyte_${key}`, JSON.stringify(globalRef.__nexbyteMockDb[key]));
+    localStorage.setItem(`nexbyte_${key}`, JSON.stringify(defaultData));
+    return defaultData;
   }
-  return globalRef.__nexbyteMockDb[key];
+  return globalRef.__nexbyteMockDb?.[key] || [];
 };
 
 const saveMockData = (key: string, data: any[] | Record<string, any>) => {
@@ -294,12 +337,15 @@ const saveMockData = (key: string, data: any[] | Record<string, any>) => {
 const getMockObject = (key: string): Record<string, any> => {
   if (typeof window !== "undefined") {
     const saved = localStorage.getItem(`nexbyte_${key}`);
+    const defaultObj = globalRef.__nexbyteMockDb?.[key] || {};
     if (saved) {
-      return JSON.parse(saved);
+      const parsed = safeParse<Record<string, any>>(saved, null as any);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
     }
-    localStorage.setItem(`nexbyte_${key}`, JSON.stringify(globalRef.__nexbyteMockDb[key]));
+    localStorage.setItem(`nexbyte_${key}`, JSON.stringify(defaultObj));
+    return defaultObj;
   }
-  return globalRef.__nexbyteMockDb[key];
+  return globalRef.__nexbyteMockDb?.[key] || {};
 };
 
 // Central Database Abstraction Helper
@@ -458,7 +504,7 @@ export const dbHelper = {
         budget: booking.budget || "N/A",
         message: booking.message || booking.remarks || "",
         bookingType: booking.bookingType || "product",
-        status: booking.status || "submitted",
+        status: booking.status || "new",
         assignedTo: booking.assignedTo || "",
         technician: booking.assignedTo || booking.technician || "",
         notes: booking.notes || "",
@@ -638,6 +684,27 @@ export const dbHelper = {
     },
     async create(prod: any) {
       let savedData: any;
+
+      // Normalize images & primary constraint
+      const normalizedImages = (prod.images && Array.isArray(prod.images))
+        ? prod.images.map((img: any, idx: number) => ({
+            id: img.id || `img-${Date.now()}-${idx}`,
+            url: img.url,
+            storage_path: img.storage_path || img.url,
+            is_primary: Boolean(img.is_primary),
+            sort_order: idx + 1,
+            alt_text: img.alt_text || "",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }))
+        : [];
+
+      // Guarantee exactly 1 primary image if images exist
+      if (normalizedImages.length > 0 && !normalizedImages.some((i: any) => i.is_primary)) {
+        normalizedImages[0].is_primary = true;
+      }
+      const primaryUrl = normalizedImages.find((i: any) => i.is_primary)?.url || prod.image || "/images/poster-products.png";
+
       const payload = {
         status: "show",
         stock: prod.stock ?? 10,
@@ -645,7 +712,10 @@ export const dbHelper = {
         condition: prod.condition || "new",
         featured: prod.featured || false,
         created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
         ...prod,
+        image: primaryUrl,
+        images: normalizedImages,
       };
 
       if (supabase) {
@@ -662,7 +732,7 @@ export const dbHelper = {
         user_name: "Admin Officer",
         role: "admin",
         action: "Product Created",
-        details: `Created product "${savedData.title}" (Price: ₹${savedData.price}, Stock: ${savedData.stock})`,
+        details: `Created product "${savedData.title}" (Price: ₹${savedData.price}, Stock: ${savedData.stock}, Images: ${normalizedImages.length})`,
         ip: "Client IP"
       });
 
@@ -687,6 +757,54 @@ export const dbHelper = {
     },
     async update(id: string, updates: any) {
       let savedData: any;
+      let existingProd: any = null;
+
+      if (supabase) {
+        const { data: current } = await supabase.from("products").select("*").eq("id", id).single();
+        existingProd = current;
+      } else {
+        const list = getMockData("products");
+        existingProd = list.find((p) => p.id === id);
+      }
+
+      // Check for removed images to cleanup storage objects
+      if (existingProd && existingProd.images && Array.isArray(existingProd.images) && updates.images && Array.isArray(updates.images)) {
+        const newUrls = new Set(updates.images.map((i: any) => i.url));
+        const removedImages = existingProd.images.filter((i: any) => i.url && !newUrls.has(i.url));
+
+        // Delete removed storage objects
+        for (const rem of removedImages) {
+          if (rem.url && !rem.url.startsWith("data:") && !rem.url.startsWith("/images/")) {
+            try {
+              if (typeof window !== "undefined") {
+                fetch(`/api/upload?filePath=${encodeURIComponent(rem.url)}`, { method: "DELETE" }).catch(() => {});
+              }
+            } catch {}
+          }
+        }
+      }
+
+      // Normalize updated images
+      let normalizedImages = updates.images;
+      if (updates.images && Array.isArray(updates.images)) {
+        let hasPrimary = false;
+        normalizedImages = updates.images.map((img: any, idx: number) => {
+          const isPri = Boolean(img.is_primary);
+          if (isPri && !hasPrimary) {
+            hasPrimary = true;
+            return { ...img, is_primary: true, sort_order: idx + 1, updated_at: new Date().toISOString() };
+          }
+          return { ...img, is_primary: false, sort_order: idx + 1, updated_at: new Date().toISOString() };
+        });
+        if (!hasPrimary && normalizedImages.length > 0) {
+          normalizedImages[0].is_primary = true;
+        }
+        updates.images = normalizedImages;
+        updates.image = normalizedImages.find((i: any) => i.is_primary)?.url || normalizedImages[0]?.url || updates.image || "/images/poster-products.png";
+      }
+
+      updates.updated_at = new Date().toISOString();
+
       if (supabase) {
         const { data } = await supabase.from("products").update(updates).eq("id", id).select().single();
         savedData = data;
@@ -738,6 +856,47 @@ export const dbHelper = {
       });
       notifyDataChange("products", "delete", { id, status: "deleted" });
       return updated;
+    },
+    async permanentDelete(id: string) {
+      let existing: any = null;
+      if (supabase) {
+        const { data } = await supabase.from("products").select("*").eq("id", id).single();
+        existing = data;
+      } else {
+        const list = getMockData("products");
+        existing = list.find((p) => p.id === id);
+      }
+
+      // Delete storage objects associated with product
+      if (existing && existing.images && Array.isArray(existing.images)) {
+        for (const img of existing.images) {
+          if (img.url && !img.url.startsWith("data:") && !img.url.startsWith("/images/")) {
+            try {
+              if (typeof window !== "undefined") {
+                fetch(`/api/upload?filePath=${encodeURIComponent(img.url)}`, { method: "DELETE" }).catch(() => {});
+              }
+            } catch {}
+          }
+        }
+      }
+
+      if (supabase) {
+        await supabase.from("products").delete().eq("id", id);
+      } else {
+        const list = getMockData("products");
+        saveMockData("products", list.filter((p) => p.id !== id));
+      }
+
+      await dbHelper.activityLogs.create({
+        user_name: "Admin Officer",
+        role: "admin",
+        action: "Product Permanently Deleted",
+        details: `Permanently deleted product ${id} and associated storage objects`,
+        ip: "Client IP"
+      });
+
+      notifyDataChange("products", "delete", { id });
+      return true;
     },
     async restore(id: string) {
       // Restore from trash: status show
@@ -807,47 +966,131 @@ export const dbHelper = {
       return getMockData("internships");
     },
     async create(internship: any) {
-      if (supabase) {
-        const { data, error } = await supabase.from("internships").insert([internship]).select().single();
-        if (error) throw error;
-        await dbHelper.notifications.create({
-          title: "New Internship Application",
-          message: `${internship.student_name} applied for: ${internship.domain}`,
-          type: "internship"
-        });
-        return data;
-      }
-      const list = getMockData("internships");
-      const newInternship = { id: `int-${Date.now()}`, status: "pending", created_at: new Date().toISOString(), ...internship };
-      saveMockData("internships", [newInternship, ...list]);
+      let savedData: any;
+      const list = await this.list();
+      const refNumber = String(list.length + 1).padStart(6, '0');
+      const application_id = internship.application_id || `INT-2026-${refNumber}`;
 
-      await dbHelper.notifications.create({
-        title: "New Internship Application",
-        message: `${internship.student_name} applied for: ${internship.domain}`,
-        type: "internship"
+      const payload = {
+        application_id,
+        status: internship.status || "pending",
+        mentor: internship.mentor || "",
+        batch: internship.batch || "",
+        progress: internship.progress || 0,
+        tasks: internship.tasks || [
+          { id: "t1", title: "Technology Setup & Environment", status: "pending" },
+          { id: "t2", title: "IEEE Abstract Review & Synopsis", status: "pending" },
+          { id: "t3", title: "Core Architecture & Coding", status: "pending" },
+          { id: "t4", title: "API Integration & Testing", status: "pending" },
+          { id: "t5", title: "Final Documentation & Viva Prep", status: "pending" },
+        ],
+        admin_notes: internship.admin_notes || "",
+        customer_reply: internship.customer_reply || "",
+        rejection_reason: internship.rejection_reason || "",
+        info_request_text: internship.info_request_text || "",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        ...internship,
+      };
+
+      if (supabase) {
+        const { data, error } = await supabase.from("internships").insert([payload]).select().single();
+        if (error) throw error;
+        savedData = data;
+      } else {
+        savedData = { id: `int-${Date.now()}`, ...payload };
+        saveMockData("internships", [savedData, ...list]);
+      }
+
+      await dbHelper.customers.autoCreateOrUpdate(internship.phone, {
+        name: internship.full_name || internship.student_name,
+        email: internship.email,
+        actionType: "internship",
+        actionItem: internship.domain,
       });
 
-      notifyDataChange("internships", "insert", newInternship);
-      return newInternship;
+      await dbHelper.notifications.create({
+        title: "New Internship Application 🎓",
+        message: `${internship.full_name || internship.student_name} applied for ${internship.domain} (${internship.college || "College"})`,
+        type: "internship",
+        audience: "admin"
+      });
+
+      notifyDataChange("internships", "insert", savedData);
+      return savedData;
     },
     async update(id: string, updates: any) {
+      let existing: any = null;
       if (supabase) {
-        const { data } = await supabase.from("internships").update(updates).eq("id", id).select().single();
-        return data;
+        const { data } = await supabase.from("internships").select("*").eq("id", id).single();
+        existing = data;
+      } else {
+        const list = getMockData("internships");
+        existing = list.find((i) => i.id === id);
       }
-      const list = getMockData("internships");
-      const updated = list.map((i) => (i.id === id ? { ...i, ...updates } : i));
-      saveMockData("internships", updated);
-      notifyDataChange("internships", "update", updated.find((i) => i.id === id));
-      return updated.find((i) => i.id === id);
+
+      const payload = {
+        updated_at: new Date().toISOString(),
+        ...updates
+      };
+
+      // Auto-generate Enrollment ID on Approval if not already present
+      if ((payload.status === "approved" || payload.status === "enrolled") && (!existing?.enrollment_id && !payload.enrollment_id)) {
+        const list = await this.list();
+        const enrRef = String(list.length + 1).padStart(6, '0');
+        payload.enrollment_id = `ENR-2026-${enrRef}`;
+      }
+
+      // Auto-generate Certificate on Completion if not already present
+      if (payload.status === "completed" && (!existing?.certificate_id && !payload.certificate_id)) {
+        // DO NOT use enrollment_id, application_id, or random IDs as the certificate Registration ID.
+        // Let dbHelper.certificates.create() call getNextRegistrationId() server-side.
+        let issuedCert: any = null;
+        try {
+          issuedCert = await dbHelper.certificates.create({
+            // registrationId intentionally omitted — server allocates NBT-TR-YYYY-NNN
+            studentName: existing?.full_name || existing?.student_name || "Student",
+            courseTitle: existing?.domain || "Internship Program",
+            trainingType: existing?.domain || "Internship Program",
+            internshipType: existing?.internship_type || "Hybrid",
+            projectTitle: existing?.project_title || existing?.domain || "Engineering Internship",
+            completionDate: existing?.end_date || new Date().toISOString().split("T")[0],
+            issueDate: new Date().toISOString().split("T")[0],
+            college: existing?.college || "",
+            phoneNumber: existing?.phone || "",
+            email: existing?.email || "",
+            // Store internship references internally for audit — NOT as the public registration ID
+            internship_application_id: existing?.application_id || "",
+            internship_enrollment_id: existing?.enrollment_id || "",
+          });
+          // Write the proper NBT-TR-YYYY-NNN back as certificate_id on the internship record
+          payload.certificate_id = issuedCert?.registrationId || "";
+        } catch (e) {
+          console.warn("Certificate auto-creation warning:", e);
+        }
+      }
+
+      let savedData: any;
+      if (supabase) {
+        const { data } = await supabase.from("internships").update(payload).eq("id", id).select().single();
+        savedData = data;
+      } else {
+        const list = getMockData("internships");
+        const updated = list.map((i) => (i.id === id ? { ...i, ...payload } : i));
+        saveMockData("internships", updated);
+        savedData = updated.find((i) => i.id === id);
+      }
+
+      notifyDataChange("internships", "update", savedData);
+      return savedData;
     },
     async delete(id: string) {
       if (supabase) {
         await supabase.from("internships").delete().eq("id", id);
-        return true;
+      } else {
+        const list = getMockData("internships");
+        saveMockData("internships", list.filter((i) => i.id !== id));
       }
-      const list = getMockData("internships");
-      saveMockData("internships", list.filter((i) => i.id !== id));
       notifyDataChange("internships", "delete", { id });
       return true;
     }
@@ -1030,14 +1273,28 @@ export const dbHelper = {
       return getMockData("laptop_enquiries");
     },
     async create(enquiry: any) {
-      let savedData;
+      let savedData: any;
+      const list = await this.list();
+      const refNumber = String(list.length + 1).padStart(6, '0');
+      const reference_id = enquiry.reference_id || `LE-2026-${refNumber}`;
+
+      const payload = {
+        reference_id,
+        status: enquiry.status || "new",
+        admin_notes: enquiry.admin_notes || "",
+        customer_reply: enquiry.customer_reply || "",
+        recommended_products: enquiry.recommended_products || [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        ...enquiry,
+      };
+
       if (supabase) {
-        const { data, error } = await supabase.from("laptop_enquiries").insert([enquiry]).select().single();
+        const { data, error } = await supabase.from("laptop_enquiries").insert([payload]).select().single();
         if (error) throw error;
         savedData = data;
       } else {
-        const list = getMockData("laptop_enquiries");
-        savedData = { id: `lp-${Date.now()}`, status: "new", admin_notes: "", created_at: new Date().toISOString(), ...enquiry };
+        savedData = { id: `lp-${Date.now()}`, ...payload };
         saveMockData("laptop_enquiries", [savedData, ...list]);
       }
 
@@ -1048,32 +1305,39 @@ export const dbHelper = {
       });
 
       await dbHelper.notifications.create({
-        title: "New Laptop Enquiry",
-        message: `${enquiry.customer_name} is looking for: ${enquiry.laptop_type} (Budget: ${enquiry.budget})`,
-        type: "laptop_enquiry"
+        title: "New Laptop Enquiry 💻",
+        message: `${enquiry.customer_name} is looking for a ${enquiry.laptop_type || "Laptop"} (Budget: ${enquiry.budget || "Unspecified"})`,
+        type: "laptop_enquiry",
+        audience: "admin"
       });
 
       notifyDataChange("laptop_enquiries", "insert", savedData);
       return savedData;
     },
     async update(id: string, updates: any) {
+      const payload = {
+        updated_at: new Date().toISOString(),
+        ...updates
+      };
       if (supabase) {
-        const { data } = await supabase.from("laptop_enquiries").update(updates).eq("id", id).select().single();
+        const { data } = await supabase.from("laptop_enquiries").update(payload).eq("id", id).select().single();
+        notifyDataChange("laptop_enquiries", "update", data);
         return data;
       }
       const list = getMockData("laptop_enquiries");
-      const updated = list.map((e) => (e.id === id ? { ...e, ...updates } : e));
+      const updated = list.map((e) => (e.id === id ? { ...e, ...payload } : e));
       saveMockData("laptop_enquiries", updated);
-      notifyDataChange("laptop_enquiries", "update", updated.find((e) => e.id === id));
-      return updated.find((e) => e.id === id);
+      const target = updated.find((e) => e.id === id);
+      notifyDataChange("laptop_enquiries", "update", target);
+      return target;
     },
     async delete(id: string) {
       if (supabase) {
         await supabase.from("laptop_enquiries").delete().eq("id", id);
-        return true;
+      } else {
+        const list = getMockData("laptop_enquiries");
+        saveMockData("laptop_enquiries", list.filter((e) => e.id !== id));
       }
-      const list = getMockData("laptop_enquiries");
-      saveMockData("laptop_enquiries", list.filter((e) => e.id !== id));
       notifyDataChange("laptop_enquiries", "delete", { id });
       return true;
     }
@@ -1308,31 +1572,177 @@ export const dbHelper = {
   // --- CERTIFICATES SECTION ---
   certificates: {
     async list() {
+      let rawList: any[] = [];
       if (supabase) {
         const { data } = await supabase.from("certificates").select("*").order("created_at", { ascending: false });
-        return data || [];
+        rawList = data || [];
+      } else {
+        rawList = getMockData("certificates");
       }
-      return getMockData("certificates");
+
+      // Migrate/clean legacy certificate records that used enrollment or random IDs as registrationId
+      let needsSave = false;
+      let migrateCounter = 0;
+      const year = new Date().getFullYear();
+
+      // Pre-compute highest existing NBT-TR number so migration assigns unique IDs after it
+      let maxExistingNum = 0;
+      rawList.forEach((c: any) => {
+        const match = (c.registrationId || "").match(/NBT-TR-(\d{4})-(\d+)/i);
+        if (match && parseInt(match[1]) === year) {
+          const n = parseInt(match[2], 10);
+          if (!isNaN(n) && n > maxExistingNum) maxExistingNum = n;
+        }
+      });
+
+      const sanitized = rawList.map((c: any) => {
+        const isLegacy =
+          !c.registrationId ||
+          c.registrationId.startsWith("ENR-") ||
+          c.registrationId.startsWith("CERT-") ||
+          c.registrationId.startsWith("NXB-INT-") ||
+          !c.registrationId.startsWith("NBT-TR-");
+
+        if (isLegacy) {
+          migrateCounter++;
+          const newNum = maxExistingNum + migrateCounter;
+          const newRegId = `NBT-TR-${year}-${String(newNum).padStart(3, "0")}`;
+          c.legacyId = c.registrationId || c.certificateId || c.id;
+          c.registrationId = newRegId;
+          c.certificateId = newRegId;
+          needsSave = true;
+        }
+        return c;
+      });
+
+      // Update the mock sequence counter after migration so next allocation continues correctly
+      if (needsSave && !supabase) {
+        const totalMaxNum = maxExistingNum + migrateCounter;
+        const mockSeq = getMockObject("certificate_sequences") || {};
+        if ((mockSeq[year] || 0) < totalMaxNum) {
+          mockSeq[year] = totalMaxNum;
+          saveMockData("certificate_sequences", mockSeq);
+        }
+        saveMockData("certificates", sanitized);
+      }
+
+      return sanitized;
     },
     async getByRegId(regId: string) {
       const list = await this.list();
-      return list.find((c) => c.registrationId?.toLowerCase() === regId?.toLowerCase()) || null;
+      const query = (regId || "").trim().toLowerCase();
+      return list.find((c: any) => c.registrationId?.toLowerCase() === query || c.certificateId?.toLowerCase() === query) || null;
+    },
+    async peekNextRegistrationId(issueYear?: number): Promise<string> {
+      const year = issueYear || new Date().getFullYear();
+      let maxExisting = 0;
+
+      const list = await this.list();
+      list.forEach((c: any) => {
+        const match = (c.registrationId || "").match(/NBT-TR-(\d{4})-(\d+)/i);
+        if (match && parseInt(match[1]) === year) {
+          const num = parseInt(match[2], 10);
+          if (!isNaN(num) && num > maxExisting) maxExisting = num;
+        }
+      });
+
+      let storedLast = 0;
+      if (supabase) {
+        try {
+          const { data } = await supabase.from("certificate_sequences").select("last_number").eq("year", year).single();
+          if (data) storedLast = data.last_number || 0;
+        } catch {}
+      } else {
+        const mockSeq = getMockObject("certificate_sequences") || {};
+        storedLast = mockSeq[year] || 0;
+      }
+
+      const nextNum = Math.max(storedLast, maxExisting) + 1;
+      const numStr = String(nextNum).padStart(3, "0");
+      return `NBT-TR-${year}-${numStr}`;
+    },
+    async getNextRegistrationId(issueYear?: number): Promise<string> {
+      const year = issueYear || new Date().getFullYear();
+      let maxExisting = 0;
+
+      // We call getMockData directly here (not this.list()) to avoid triggering
+      // migration recursion and to get raw persisted data.
+      let rawList: any[] = [];
+      if (supabase) {
+        try {
+          const { data } = await supabase.from("certificates").select("registration_id").order("created_at", { ascending: false });
+          rawList = data || [];
+        } catch {}
+      } else {
+        rawList = getMockData("certificates");
+      }
+
+      rawList.forEach((c: any) => {
+        const match = (c.registrationId || c.registration_id || "").match(/NBT-TR-(\d{4})-(\d+)/i);
+        if (match && parseInt(match[1]) === year) {
+          const num = parseInt(match[2], 10);
+          if (!isNaN(num) && num > maxExisting) maxExisting = num;
+        }
+      });
+
+      let storedLast = 0;
+      if (supabase) {
+        try {
+          const { data } = await supabase.from("certificate_sequences").select("last_number").eq("year", year).single();
+          if (data) storedLast = typeof data.last_number === "number" ? data.last_number : 0;
+        } catch {}
+      } else {
+        // Safe: getMockObject always returns {} on missing/invalid keys
+        const mockSeq = getMockObject("certificate_sequences");
+        storedLast = typeof mockSeq[year] === "number" ? mockSeq[year] : 0;
+      }
+
+      const nextNum = Math.max(storedLast, maxExisting) + 1;
+
+      // Persist the allocated counter BEFORE returning so concurrent calls
+      // on the same process see the updated value (best-effort for mock mode;
+      // use a real DB sequence / advisory lock for true concurrency safety).
+      if (supabase) {
+        try {
+          await supabase.from("certificate_sequences").upsert({ year, last_number: nextNum, updated_at: new Date().toISOString() });
+        } catch {}
+      } else {
+        const mockSeq = getMockObject("certificate_sequences");
+        mockSeq[year] = nextNum;
+        saveMockData("certificate_sequences", mockSeq);
+      }
+
+      const numStr = String(nextNum).padStart(3, "0");
+      return `NBT-TR-${year}-${numStr}`;
     },
     async create(cert: any) {
-      const qrData = `https://nexbytetechnologies.com/verify?regid=${cert.registrationId}`;
+      let registrationId = cert.registrationId;
+      if (!registrationId || !registrationId.startsWith("NBT-TR-")) {
+        let issueYear = new Date().getFullYear();
+        if (cert.completionDate || cert.issueDate) {
+          const dt = new Date(cert.completionDate || cert.issueDate);
+          if (!isNaN(dt.getFullYear())) issueYear = dt.getFullYear();
+        }
+        registrationId = await this.getNextRegistrationId(issueYear);
+      }
+
+      const qrData = `https://nexbytetechnologies.com/verify?regid=${encodeURIComponent(registrationId)}`;
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrData)}`;
+
       const newCert = {
         id: cert.id || `c-${Date.now()}`,
-        status: "verified",
+        registrationId,
+        certificateId: registrationId, // mirrored for model safety
+        status: cert.status || "verified",
         qrCodeUrl: qrUrl,
         created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
         ...cert,
       };
 
       if (supabase) {
         const { data, error } = await supabase.from("certificates").insert([newCert]).select().single();
         if (error) throw error;
-        // Auto update customer certificatesCount
         if (newCert.phoneNumber) {
           await dbHelper.customers.autoCreateOrUpdate(newCert.phoneNumber, {
             name: newCert.studentName,
@@ -1341,14 +1751,12 @@ export const dbHelper = {
             actionItem: newCert.courseTitle || newCert.projectTitle,
           });
         }
+        notifyDataChange("certificates", "insert", data);
         return data;
       }
 
       const list = getMockData("certificates");
       saveMockData("certificates", [newCert, ...list]);
-      notifyDataChange("certificates", "insert", newCert);
-
-      // Auto update customer
       if (newCert.phoneNumber) {
         await dbHelper.customers.autoCreateOrUpdate(newCert.phoneNumber, {
           name: newCert.studentName,
@@ -1357,7 +1765,7 @@ export const dbHelper = {
           actionItem: newCert.courseTitle || newCert.projectTitle,
         });
       }
-
+      notifyDataChange("certificates", "insert", newCert);
       return newCert;
     },
     async update(id: string, updates: any) {
@@ -1601,6 +2009,311 @@ export const dbHelper = {
       saveMockData("media", list.filter((m) => m.id !== id));
       notifyDataChange("media", "delete", { id });
       return true;
+    }
+  },
+
+  // --- RESELLERS SECTION ---
+  resellers: {
+    async list() {
+      if (supabase) {
+        const { data } = await supabase.from("resellers").select("*").order("created_at", { ascending: false });
+        return data || [];
+      }
+      return getMockData("resellers");
+    },
+    async getByEmail(email: string) {
+      if (supabase) {
+        const { data } = await supabase.from("resellers").select("*").eq("email", email.toLowerCase()).single();
+        return data || null;
+      }
+      const list = getMockData("resellers");
+      return list.find((r: any) => r.email?.toLowerCase() === email.toLowerCase()) || null;
+    },
+    async getById(id: string) {
+      if (supabase) {
+        const { data } = await supabase.from("resellers").select("*").eq("id", id).single();
+        return data || null;
+      }
+      const list = getMockData("resellers");
+      return list.find((r: any) => r.id === id) || null;
+    },
+    async create(reseller: any) {
+      const newReseller = {
+        id: `res-${Date.now()}`,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        ...reseller,
+      };
+      if (supabase) {
+        const { data, error } = await supabase.from("resellers").insert([newReseller]).select().single();
+        if (error) throw error;
+        notifyDataChange("resellers", "insert", data);
+        return data;
+      }
+      const list = getMockData("resellers");
+      saveMockData("resellers", [newReseller, ...list]);
+      notifyDataChange("resellers", "insert", newReseller);
+      return newReseller;
+    },
+    async update(id: string, updates: any) {
+      const payload = { ...updates, updated_at: new Date().toISOString() };
+      if (supabase) {
+        const { data } = await supabase.from("resellers").update(payload).eq("id", id).select().single();
+        notifyDataChange("resellers", "update", data);
+        return data;
+      }
+      const list = getMockData("resellers");
+      const updated = list.map((r: any) => r.id === id ? { ...r, ...payload } : r);
+      saveMockData("resellers", updated);
+      const found = updated.find((r: any) => r.id === id);
+      notifyDataChange("resellers", "update", found);
+      return found;
+    },
+    async delete(id: string) {
+      if (supabase) {
+        await supabase.from("resellers").delete().eq("id", id);
+        return true;
+      }
+      const list = getMockData("resellers");
+      saveMockData("resellers", list.filter((r: any) => r.id !== id));
+      notifyDataChange("resellers", "delete", { id });
+      return true;
+    }
+  },
+
+  // --- ORDERS SECTION ---
+  orders: {
+    async getNextOrderId(): Promise<string> {
+      const year = new Date().getFullYear();
+      const list = await this.list();
+      let max = 0;
+      list.forEach((o: any) => {
+        const match = (o.order_id || "").match(/NB-ORD-\d{4}-(\d+)/i);
+        if (match) {
+          const n = parseInt(match[1], 10);
+          if (!isNaN(n) && n > max) max = n;
+        }
+      });
+      return `NB-ORD-${year}-${String(max + 1).padStart(6, "0")}`;
+    },
+    async list() {
+      if (supabase) {
+        const { data } = await supabase.from("orders").select("*").order("created_at", { ascending: false });
+        return data || [];
+      }
+      return getMockData("orders");
+    },
+    async listByUser(userId: string) {
+      const list = await this.list();
+      return list.filter((o: any) => o.user_id === userId);
+    },
+    async listBySeller(sellerId: string) {
+      const list = await this.list();
+      return list.filter((o: any) => o.seller_id === sellerId);
+    },
+    async getById(id: string) {
+      if (supabase) {
+        const { data } = await supabase.from("orders").select("*").eq("id", id).single();
+        return data || null;
+      }
+      const list = getMockData("orders");
+      return list.find((o: any) => o.id === id || o.order_id === id) || null;
+    },
+    async create(order: any) {
+      const orderId = await this.getNextOrderId();
+      const newOrder = {
+        id: `ord-${Date.now()}`,
+        order_id: orderId,
+        status: "pending",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        ...order,
+      };
+      if (supabase) {
+        const { data, error } = await supabase.from("orders").insert([newOrder]).select().single();
+        if (error) throw error;
+        notifyDataChange("orders", "insert", data);
+        return data;
+      }
+      const list = getMockData("orders");
+      saveMockData("orders", [newOrder, ...list]);
+      notifyDataChange("orders", "insert", newOrder);
+      return newOrder;
+    },
+    async update(id: string, updates: any) {
+      const payload = { ...updates, updated_at: new Date().toISOString() };
+      if (supabase) {
+        const { data } = await supabase.from("orders").update(payload).eq("id", id).select().single();
+        notifyDataChange("orders", "update", data);
+        return data;
+      }
+      const list = getMockData("orders");
+      const updated = list.map((o: any) => o.id === id ? { ...o, ...payload } : o);
+      saveMockData("orders", updated);
+      const found = updated.find((o: any) => o.id === id);
+      notifyDataChange("orders", "update", found);
+      return found;
+    }
+  },
+
+  // --- CART SECTION ---
+  cart: {
+    async getByUser(userId: string) {
+      if (supabase) {
+        const { data } = await supabase.from("cart_items").select("*").eq("user_id", userId);
+        return data || [];
+      }
+      const list = getMockData("cart_items");
+      return list.filter((c: any) => c.user_id === userId);
+    },
+    async addItem(userId: string, item: any) {
+      if (supabase) {
+        // Upsert: if same product exists, increase qty
+        const { data: existing } = await supabase.from("cart_items").select("*").eq("user_id", userId).eq("product_id", item.product_id).single();
+        if (existing) {
+          const { data } = await supabase.from("cart_items").update({ quantity: existing.quantity + (item.quantity || 1) }).eq("id", existing.id).select().single();
+          return data;
+        }
+        const { data } = await supabase.from("cart_items").insert([{ user_id: userId, ...item, created_at: new Date().toISOString() }]).select().single();
+        return data;
+      }
+      const list = getMockData("cart_items");
+      const existing = list.find((c: any) => c.user_id === userId && c.product_id === item.product_id);
+      if (existing) {
+        const updated = list.map((c: any) => c.id === existing.id ? { ...c, quantity: c.quantity + (item.quantity || 1) } : c);
+        saveMockData("cart_items", updated);
+        return updated.find((c: any) => c.id === existing.id);
+      }
+      const newItem = { id: `ci-${Date.now()}`, user_id: userId, quantity: 1, created_at: new Date().toISOString(), ...item };
+      saveMockData("cart_items", [...list, newItem]);
+      return newItem;
+    },
+    async updateQty(itemId: string, quantity: number) {
+      if (quantity < 1) return this.removeItem(itemId);
+      if (supabase) {
+        const { data } = await supabase.from("cart_items").update({ quantity }).eq("id", itemId).select().single();
+        return data;
+      }
+      const list = getMockData("cart_items");
+      const updated = list.map((c: any) => c.id === itemId ? { ...c, quantity } : c);
+      saveMockData("cart_items", updated);
+      return updated.find((c: any) => c.id === itemId);
+    },
+    async removeItem(itemId: string) {
+      if (supabase) {
+        await supabase.from("cart_items").delete().eq("id", itemId);
+        return true;
+      }
+      const list = getMockData("cart_items");
+      saveMockData("cart_items", list.filter((c: any) => c.id !== itemId));
+      return true;
+    },
+    async clearCart(userId: string) {
+      if (supabase) {
+        await supabase.from("cart_items").delete().eq("user_id", userId);
+        return true;
+      }
+      const list = getMockData("cart_items");
+      saveMockData("cart_items", list.filter((c: any) => c.user_id !== userId));
+      return true;
+    }
+  },
+
+  // --- PROFILES SECTION ---
+  profiles: {
+    async getById(id: string) {
+      if (supabase) {
+        const { data } = await supabase.from("profiles").select("*").eq("id", id).single();
+        if (data) return data;
+        const { data: userData } = await supabase.from("users").select("*").eq("id", id).single();
+        return userData || null;
+      }
+      const users = getMockData("users");
+      const profiles = getMockData("profiles");
+      const found = profiles.find((p: any) => p.id === id) || users.find((u: any) => u.id === id || u.email === id);
+      return found || null;
+    },
+    async update(id: string, updates: any) {
+      const payload = { ...updates, updated_at: new Date().toISOString() };
+      if (supabase) {
+        const { data } = await supabase.from("profiles").update(payload).eq("id", id).select().single();
+        if (data) {
+          notifyDataChange("profiles", "update", data);
+          return data;
+        }
+        const { data: userData } = await supabase.from("users").update(payload).eq("id", id).select().single();
+        notifyDataChange("users", "update", userData);
+        return userData;
+      }
+      const list = getMockData("users");
+      const updated = list.map((u: any) => (u.id === id || u.email === id ? { ...u, ...payload } : u));
+      saveMockData("users", updated);
+      notifyDataChange("users", "update", updated.find((u: any) => u.id === id || u.email === id));
+      return updated.find((u: any) => u.id === id || u.email === id);
+    }
+  },
+
+  // --- FAVORITES SECTION ---
+  favorites: {
+    async getByUser(userId: string) {
+      if (supabase) {
+        const { data } = await supabase.from("favorites").select("*").eq("user_id", userId);
+        return data || [];
+      }
+      const list = getMockData("favorites");
+      return list.filter((f: any) => f.user_id === userId);
+    },
+    async toggle(userId: string, productId: string) {
+      const existing = await this.getByUser(userId);
+      const isFav = existing.some((f: any) => f.product_id === productId);
+      if (supabase) {
+        if (isFav) {
+          await supabase.from("favorites").delete().eq("user_id", userId).eq("product_id", productId);
+          return { favorited: false };
+        } else {
+          const { data } = await supabase.from("favorites").insert([{ user_id: userId, product_id: productId, created_at: new Date().toISOString() }]).select().single();
+          return { favorited: true, data };
+        }
+      }
+      const list = getMockData("favorites");
+      if (isFav) {
+        const updated = list.filter((f: any) => !(f.user_id === userId && f.product_id === productId));
+        saveMockData("favorites", updated);
+        return { favorited: false };
+      } else {
+        const newFav = { id: `fav-${Date.now()}`, user_id: userId, product_id: productId, created_at: new Date().toISOString() };
+        saveMockData("favorites", [...list, newFav]);
+        return { favorited: true, data: newFav };
+      }
+    }
+  },
+
+  // --- MESSAGES SECTION ---
+  messages: {
+    async getByUser(userId: string) {
+      if (supabase) {
+        const { data } = await supabase.from("messages").select("*").or(`user_id.eq.${userId},customer_email.eq.${userId}`).order("created_at", { ascending: true });
+        return data || [];
+      }
+      const list = getMockData("messages");
+      return list.filter((m: any) => m.user_id === userId || m.customer_email === userId);
+    },
+    async send(message: any) {
+      const payload = {
+        id: `msg-${Date.now()}`,
+        status: "unread",
+        created_at: new Date().toISOString(),
+        ...message
+      };
+      if (supabase) {
+        const { data } = await supabase.from("messages").insert([payload]).select().single();
+        notifyDataChange("messages", "insert", data);
+        return data;
+      }
+      const list = getMockData("messages");
+      saveMockData("messages", [...list, payload]);
+      notifyDataChange("messages", "insert", payload);
+      return payload;
     }
   }
 };

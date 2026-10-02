@@ -3,23 +3,26 @@
 import { useState, useEffect } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import { Product, business } from "@/lib/data";
+import { Product } from "@/lib/data";
+import { getSafeImageSrc, cn } from "@/lib/utils";
 import {
   Search,
   Heart,
   Eye,
-  MessageCircle,
   X,
-  SlidersHorizontal,
   GitCompare,
-  CheckCircle,
   CheckCircle2,
   Sparkles,
   ShoppingBag,
+  ChevronLeft,
+  ChevronRight,
+  ZoomIn,
+  Laptop,
 } from "lucide-react";
 import Image from "next/image";
 import { dbHelper } from "@/lib/dbHelper";
 import { safeJsonFetch } from "@/lib/apiHelper";
+import { useCartStore } from "@/lib/cartStore";
 
 const CATEGORIES = [
   { val: "all", label: "All Products" },
@@ -37,11 +40,12 @@ const CATEGORIES = [
 ];
 
 export default function ProductsPage() {
+  const addToCart = useCartStore((s) => s.addItem);
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   
-  // Wishlist state (persisted in local storage)
+  // Wishlist state
   const [wishlist, setWishlist] = useState<string[]>([]);
   const [showWishlistOnly, setShowWishlistOnly] = useState(false);
 
@@ -49,9 +53,32 @@ export default function ProductsPage() {
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [showCompareDrawer, setShowCompareDrawer] = useState(false);
 
-  // Modal views
+  // Modal views & Multi-Image Gallery State
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
-  
+  const [quickViewActiveImageIndex, setQuickViewActiveImageIndex] = useState(0);
+  const [zoomModalImageUrl, setZoomModalImageUrl] = useState<string | null>(null);
+
+  // Customer Laptop Enquiry Form Modal State
+  const [showLaptopEnquiryModal, setShowLaptopEnquiryModal] = useState(false);
+  const [enquiryName, setEnquiryName] = useState("");
+  const [enquiryPhone, setEnquiryPhone] = useState("");
+  const [enquiryEmail, setEnquiryEmail] = useState("");
+  const [enquiryCity, setEnquiryCity] = useState("");
+  const [enquiryType, setEnquiryType] = useState("Business Laptop");
+  const [enquiryBudget, setEnquiryBudget] = useState("₹30,000 – ₹40,000");
+  const [enquiryBrand, setEnquiryBrand] = useState("Any Brand");
+  const [enquiryProcessor, setEnquiryProcessor] = useState("No Preference");
+  const [enquiryRam, setEnquiryRam] = useState("16 GB");
+  const [enquiryStorage, setEnquiryStorage] = useState("512 GB");
+  const [enquiryGpu, setEnquiryGpu] = useState("No Preference");
+  const [enquiryCondition, setEnquiryCondition] = useState("Any");
+  const [enquiryUseCase, setEnquiryUseCase] = useState("General Use");
+  const [enquiryRequirements, setEnquiryRequirements] = useState("");
+  const [enquiryContact, setEnquiryContact] = useState("WhatsApp");
+  const [enquirySubmitting, setEnquirySubmitting] = useState(false);
+  const [enquiryError, setEnquiryError] = useState("");
+  const [enquirySuccessRef, setEnquirySuccessRef] = useState<string | null>(null);
+
   // Booking inline form modal
   const [bookingProduct, setBookingProduct] = useState<Product | null>(null);
   const [bookName, setBookName] = useState("");
@@ -60,36 +87,30 @@ export default function ProductsPage() {
   const [bookCity, setBookCity] = useState("");
   const [bookBudget, setBookBudget] = useState("");
   const [bookQuantity, setBookQuantity] = useState("1");
-  const [bookPreferredContact, setBookPreferredContact] = useState("WhatsApp");
   const [bookMessage, setBookMessage] = useState("");
-  const [honeypot, setHoneypot] = useState("");
-  
-  const [successPopup, setSuccessPopup] = useState(false);
-  const [createdBookingId, setCreatedBookingId] = useState("");
-  const [errorMsg, setErrorMsg] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [createdBookingId, setCreatedBookingId] = useState<string | null>(null);
+  const [successPopup, setSuccessPopup] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+  const [honeypot, setHoneypot] = useState("");
+
+  const loadProducts = async () => {
+    try {
+      const list = await dbHelper.products.list();
+      setProducts(list);
+    } catch (e) {
+      console.error("Failed to load products", e);
+    }
+  };
 
   useEffect(() => {
-    const loadProducts = async () => {
-      const allProducts = await dbHelper.products.list();
-      // Assume missing status means show for backward compatibility with static data
-      setProducts(allProducts.filter(p => !p.status || p.status === "show"));
-    };
     loadProducts();
-    window.addEventListener("nexbyte-realtime", loadProducts);
-
-    try {
-      const saved = localStorage.getItem("nexbyte_wishlist");
-      if (saved) {
-        setWishlist(JSON.parse(saved));
-      }
-    } catch (e) {
-      console.error(e);
+    const stored = localStorage.getItem("nexbyte_wishlist");
+    if (stored) {
+      try { setWishlist(JSON.parse(stored)); } catch {}
     }
-
-    return () => {
-      window.removeEventListener("nexbyte-realtime", loadProducts);
-    };
+    window.addEventListener("nexbyte-realtime", loadProducts);
+    return () => window.removeEventListener("nexbyte-realtime", loadProducts);
   }, []);
 
   const toggleWishlist = (id: string) => {
@@ -104,7 +125,6 @@ export default function ProductsPage() {
       setCompareIds((prev) => prev.filter((item) => item !== id));
     } else {
       if (compareIds.length >= 2) {
-        // Swap first item out
         setCompareIds((prev) => [prev[1], id]);
       } else {
         setCompareIds((prev) => [...prev, id]);
@@ -119,9 +139,7 @@ export default function ProductsPage() {
       return;
     }
 
-    // Bot spam trap check
     if (honeypot) {
-      // Silent fail
       setBookName("");
       setBookPhone("");
       setBookingProduct(null);
@@ -132,9 +150,9 @@ export default function ProductsPage() {
     setErrorMsg("");
 
     try {
-      const res = await safeJsonFetch('/api/bookings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await safeJsonFetch("/api/bookings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customerName: bookName,
           phone: bookPhone,
@@ -155,7 +173,6 @@ export default function ProductsPage() {
       setCreatedBookingId(res.data.bookingId || res.data.booking?.bookingId || "NB-2026-SUBMITTED");
       setSuccessPopup(true);
 
-      // Reset form
       setBookName("");
       setBookPhone("");
       setBookEmail("");
@@ -172,14 +189,57 @@ export default function ProductsPage() {
     }
   };
 
+  const handleLaptopEnquirySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!enquiryName.trim() || !enquiryPhone.trim() || !enquiryCity.trim()) {
+      setEnquiryError("Customer Name, Phone Number, and City are required.");
+      return;
+    }
 
+    setEnquirySubmitting(true);
+    setEnquiryError("");
 
-  // Filters calculations
+    try {
+      const res = await safeJsonFetch("/api/laptop-enquiries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer_name: enquiryName,
+          phone: enquiryPhone,
+          email: enquiryEmail,
+          city: enquiryCity,
+          laptop_type: enquiryType,
+          budget: enquiryBudget,
+          brand_preference: enquiryBrand,
+          processor_preference: enquiryProcessor,
+          ram_preference: enquiryRam,
+          storage_preference: enquiryStorage,
+          gpu_preference: enquiryGpu,
+          condition: enquiryCondition,
+          use_case: enquiryUseCase,
+          requirements: enquiryRequirements,
+          preferred_contact: enquiryContact,
+        }),
+      });
+
+      if (!res.ok || !res.data?.success) {
+        throw new Error(res.error || "Failed to submit laptop enquiry.");
+      }
+
+      setEnquirySuccessRef(res.data.referenceId || res.data.enquiry?.reference_id || "LE-2026-SUBMITTED");
+    } catch (err: any) {
+      console.error(err);
+      setEnquiryError(err.message || "Failed to submit enquiry. Please try again.");
+    } finally {
+      setEnquirySubmitting(false);
+    }
+  };
+
   const filteredProducts = products.filter((prod) => {
     const matchesSearch =
       prod.title.toLowerCase().includes(search.toLowerCase()) ||
       prod.description.toLowerCase().includes(search.toLowerCase()) ||
-      Object.values(prod.specs).some((v) => v.toLowerCase().includes(search.toLowerCase()));
+      Object.values(prod.specs || {}).some((v) => v.toLowerCase().includes(search.toLowerCase()));
 
     const matchesCategory = categoryFilter === "all" ? true : prod.category === categoryFilter;
     const matchesWishlist = showWishlistOnly ? wishlist.includes(prod.id) : true;
@@ -199,7 +259,7 @@ export default function ProductsPage() {
         <div className="relative z-10 mx-auto max-w-7xl px-5 sm:px-8">
           
           {/* Header */}
-          <div className="text-center max-w-3xl mx-auto mb-12">
+          <div className="text-center max-w-3xl mx-auto mb-10">
             <span className="section-eyebrow">
               <span className="h-1.5 w-1.5 rounded-full bg-nex-blueLight shadow-glow-blue" />
               NEXBYTE HARDWARE HUB
@@ -212,9 +272,8 @@ export default function ProductsPage() {
             </p>
           </div>
 
-          {/* Search, Favorites & Filters Bar */}
-          <div className="glass-panel p-5 rounded-2xl border border-white/5 bg-nex-ink flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-8">
-            {/* Search Box */}
+          {/* Search, Favorites & Controls Bar */}
+          <div className="glass-panel p-5 rounded-2xl border border-white/5 bg-nex-ink flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-nex-mist" />
               <input
@@ -226,8 +285,7 @@ export default function ProductsPage() {
               />
             </div>
 
-            {/* Controls Toggles */}
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <button
                 onClick={() => setShowWishlistOnly((prev) => !prev)}
                 className={cn(
@@ -238,7 +296,7 @@ export default function ProductsPage() {
                 )}
               >
                 <Heart className={cn("h-4 w-4", showWishlistOnly && "fill-red-400")} />
-                <span>Favorites Only ({wishlist.length})</span>
+                <span>Favorites ({wishlist.length})</span>
               </button>
 
               {compareIds.length > 0 && (
@@ -250,11 +308,38 @@ export default function ProductsPage() {
                   <span>Compare ({compareIds.length})</span>
                 </button>
               )}
+
+              <button
+                onClick={() => setShowLaptopEnquiryModal(true)}
+                className="btn-primary !py-2.5 !px-4 text-xs flex items-center gap-2 bg-gradient-to-r from-nex-blue to-purple-600 border-none shadow-glow-blue"
+              >
+                <Laptop className="h-4 w-4 text-amber-300" />
+                <span>Looking for a Laptop?</span>
+              </button>
             </div>
           </div>
 
+          {/* Prominent Customer Laptop Enquiry Banner */}
+          <div className="glass-panel p-4 rounded-2xl border border-nex-blue/20 bg-nex-ink/90 flex flex-col sm:flex-row items-center justify-between gap-4 mb-8 shadow-glow-blue">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-nex-blue/10 border border-nex-blue/20 text-nex-blueLight flex items-center justify-center shrink-0">
+                <Laptop className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-white">Can&apos;t find the laptop you need?</h4>
+                <p className="text-[11px] text-nex-mist mt-0.5">Tell us your budget &amp; specifications and NexByte will source or recommend a suitable laptop for you.</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowLaptopEnquiryModal(true)}
+              className="btn-primary !py-2 !px-4 text-xs shrink-0 flex items-center gap-1.5"
+            >
+              <Sparkles className="h-3.5 w-3.5 text-amber-400 fill-amber-400" /> Send Laptop Requirement
+            </button>
+          </div>
+
           {/* Category Tabs */}
-          <div className="flex flex-wrap gap-2 mb-10">
+          <div className="flex flex-wrap gap-2 mb-8">
             {CATEGORIES.map((cat) => (
               <button
                 key={cat.val}
@@ -273,14 +358,20 @@ export default function ProductsPage() {
 
           {/* Products Grid */}
           {filteredProducts.length === 0 ? (
-            <div className="text-center py-20 glass-panel rounded-2xl">
-              <Search className="h-10 w-10 text-nex-mist mx-auto mb-4" />
-              <p className="text-base text-white font-medium">No hardware items found matching criteria.</p>
-              {showWishlistOnly && (
-                <button onClick={() => setShowWishlistOnly(false)} className="text-nex-blueLight text-xs mt-2 underline">
-                  Show all products
-                </button>
-              )}
+            <div className="text-center py-16 glass-panel rounded-2xl border border-nex-blue/20 bg-nex-ink/90 p-8 space-y-4">
+              <Laptop className="h-12 w-12 text-nex-blueLight mx-auto" />
+              <div>
+                <h3 className="font-display text-lg font-bold text-white">Can&apos;t find what you&apos;re looking for?</h3>
+                <p className="text-xs text-nex-mist mt-1 max-w-md mx-auto leading-relaxed">
+                  Tell us your laptop requirements and budget, and NexByte will help you find or customize a suitable option.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowLaptopEnquiryModal(true)}
+                className="btn-primary !py-2.5 !px-6 text-xs inline-flex items-center gap-2"
+              >
+                <Sparkles className="h-4 w-4 text-amber-400 fill-amber-400" /> Send Laptop Requirement
+              </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -290,125 +381,108 @@ export default function ProductsPage() {
                 return (
                   <div
                     key={prod.id}
-                    className="glass-card p-5 bg-nex-ink border border-white/5 flex flex-col justify-between group rounded-2xl relative overflow-hidden"
+                    className="glass-panel group relative flex flex-col justify-between rounded-2xl border border-white/5 bg-nex-ink p-5 transition-all duration-300 hover:-translate-y-1.5 hover:border-nex-blue/40 hover:shadow-glow-blue"
                   >
                     <div>
-                      {/* Product Image Panel */}
-                      <div className="relative h-48 w-full rounded-xl overflow-hidden bg-white/[0.02] border border-white/[0.04] mb-4 flex items-center justify-center p-4">
-                        <Image
-                          src={prod.image}
+                      {/* Image Preview Container */}
+                      <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-white/[0.02] border border-white/[0.08] p-4 flex items-center justify-center mb-4">
+                        <img
+                          src={getSafeImageSrc(prod.image)}
                           alt={prod.title}
-                          fill
-                          sizes="(max-width: 768px) 100vw, 33vw"
-                          className="object-contain p-4 transition-transform duration-500 group-hover:scale-105"
-                          loading="lazy"
+                          className="object-contain max-h-full max-w-full transition-transform duration-300 group-hover:scale-105"
                         />
 
-                        {/* Top action flags */}
-                        <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-auto">
-                          <span className="rounded-full bg-nex-blue/90 backdrop-blur-md px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">
-                            {CATEGORIES.find((c) => c.val === prod.category)?.label}
-                          </span>
+                        {/* Top Badge Overlay */}
+                        <div className="absolute top-2 left-2 flex gap-1">
+                          {prod.discount && prod.discount > 0 ? (
+                            <span className="rounded bg-red-500/20 border border-red-500/30 px-2 py-0.5 text-[9px] font-bold text-red-400 uppercase">
+                              -{prod.discount}% OFF
+                            </span>
+                          ) : null}
+                          {prod.condition && (
+                            <span className="rounded bg-nex-blue/20 border border-nex-blue/30 px-2 py-0.5 text-[9px] font-bold text-nex-blueLight uppercase">
+                              {prod.condition.replace("_", " ")}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="absolute top-2 right-2 flex flex-col gap-1.5">
                           <button
                             onClick={() => toggleWishlist(prod.id)}
-                            className="h-8.5 w-8.5 rounded-full glass-panel flex items-center justify-center text-white hover:text-red-400 transition-colors shadow-glass"
-                            aria-label="Add to wishlist"
+                            className="h-7 w-7 rounded-full bg-black/60 hover:bg-black/90 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white transition-all"
+                            title="Add to Wishlist"
                           >
-                            <Heart className={cn("h-4.5 w-4.5", isFav && "fill-red-500 text-red-500")} />
+                            <Heart className={cn("h-3.5 w-3.5", isFav && "text-red-400 fill-red-400")} />
+                          </button>
+                          <button
+                            onClick={() => setQuickViewProduct(prod)}
+                            className="h-7 w-7 rounded-full bg-black/60 hover:bg-black/90 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white transition-all"
+                            title="Quick View Gallery"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
                           </button>
                         </div>
                       </div>
 
-                      {/* Header details */}
-                      <h3 className="font-display text-sm font-bold text-white group-hover:text-nex-blueLight transition-colors">
+                      <span className="rounded-full bg-nex-blue/10 border border-nex-blue/20 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-nex-blueLight">
+                        {CATEGORIES.find((c) => c.val === prod.category)?.label || prod.category}
+                      </span>
+
+                      <h3 className="font-display text-base font-bold text-white mt-2 line-clamp-1">
                         {prod.title}
                       </h3>
-                      <p className="text-[11px] text-nex-mist mt-1 leading-relaxed line-clamp-2">
+
+                      <p className="text-xs text-nex-mist mt-1 line-clamp-2 leading-relaxed">
                         {prod.description}
                       </p>
 
-                      {/* Spec summary bullet points */}
-                      <div className="mt-3.5 space-y-1">
-                        {prod.specs.Processor && (
-                          <div className="text-[10px] text-white/80 flex items-center gap-1.5">
-                            <span className="h-1 w-1 rounded-full bg-nex-blueLight" />
-                            <span className="font-semibold">CPU:</span> {prod.specs.Processor}
+                      {/* Specs Snippet */}
+                      <div className="mt-3 grid grid-cols-2 gap-1.5 text-[10px] bg-white/[0.02] p-2 rounded-lg border border-white/[0.05]">
+                        {Object.entries(prod.specs || {}).slice(0, 4).map(([k, v]) => (
+                          <div key={k} className="truncate">
+                            <span className="text-nex-mist font-medium">{k}: </span>
+                            <span className="text-white font-semibold">{v}</span>
                           </div>
-                        )}
-                        {prod.specs.RAM && (
-                          <div className="text-[10px] text-white/80 flex items-center gap-1.5">
-                            <span className="h-1 w-1 rounded-full bg-nex-blueLight" />
-                            <span className="font-semibold">RAM:</span> {prod.specs.RAM}
-                          </div>
-                        )}
-                        {prod.specs.Condition && (
-                          <div className="text-[10px] text-white/80 flex items-center gap-1.5">
-                            <span className="h-1 w-1 rounded-full bg-nex-blueLight" />
-                            <span className="font-semibold">State:</span> {prod.specs.Condition}
-                          </div>
-                        )}
+                        ))}
                       </div>
                     </div>
 
-                    <div>
-                      {/* Price & Stock display */}
-                      <div className="mt-5 flex items-center justify-between border-t border-white/[0.04] pt-4">
-                        <div className="flex flex-col">
-                          <span className="text-xs text-nex-mist">Ref. Price</span>
-                          {prod.discount && prod.discount > 0 ? (
-                            <span className="text-[10px] text-green-400 font-semibold">{prod.discount}% OFF</span>
-                          ) : null}
-                        </div>
-                        <div className="text-right">
-                          <span className="text-sm font-bold text-white">
-                            Rs. {(prod.price ?? 0).toLocaleString("en-IN")}
-                          </span>
-                          {prod.stock === 0 && (
-                            <div className="text-[9px] font-bold text-red-400 uppercase">Out of Stock</div>
-                          )}
-                        </div>
+                    <div className="mt-5 border-t border-white/5 pt-4 flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] text-nex-mist block uppercase">Special Price</span>
+                        <span className="font-display text-base font-bold text-white">
+                          Rs. {(prod.price ?? 0).toLocaleString("en-IN")}
+                        </span>
                       </div>
 
-                      {/* Interactive triggers */}
-                      <div className="mt-4 grid grid-cols-2 gap-2">
-                        <button
-                          onClick={() => setQuickViewProduct(prod)}
-                          className="btn-secondary !py-2 !px-3 text-[10px] flex items-center justify-center gap-1"
-                        >
-                          <Eye className="h-3.5 w-3.5" /> Quick View
-                        </button>
+                      <div className="flex items-center gap-1.5">
                         <button
                           onClick={() => toggleCompare(prod.id)}
                           className={cn(
-                            "btn-secondary !py-2 !px-3 text-[10px] flex items-center justify-center gap-1",
-                            isComparing && "border-nex-blueLight text-nex-blueLight"
+                            "p-2 rounded-xl border text-xs font-semibold transition-all",
+                            isComparing
+                              ? "bg-nex-blue/20 border-nex-blue text-nex-blueLight"
+                              : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
                           )}
+                          title="Compare specifications"
                         >
                           <GitCompare className="h-3.5 w-3.5" />
-                          {isComparing ? "Comparing" : "Compare"}
                         </button>
-                      </div>
-
-                      <div className="mt-2">
-                        {prod.stock === 0 ? (
-                          <button
-                            onClick={() => {
-                              window.dispatchEvent(new CustomEvent("nexbyte-open-booking-modal", {
-                                detail: { prefilledItem: `Notify Me: ${prod.title}` }
-                              }));
-                            }}
-                            className="w-full !py-2 !px-3 text-[10px] font-bold rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 transition-all flex items-center justify-center gap-1"
-                          >
-                            Notify Me When Available
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => setBookingProduct(prod)}
-                            className="btn-primary w-full !py-2 !px-3 text-[10px] flex items-center justify-center gap-1 !shadow-none hover:!shadow-glow-blue"
-                          >
-                            <ShoppingBag className="h-3.5 w-3.5" /> Book Now
-                          </button>
-                        )}
+                        <button
+                          onClick={() => addToCart(prod)}
+                          className="btn-primary !py-2 !px-3 text-xs flex items-center gap-1 shadow-glow-blue"
+                          title="Add to Cart"
+                        >
+                          <ShoppingBag className="h-3.5 w-3.5" /> +Cart
+                        </button>
+                        <button
+                          onClick={() => setBookingProduct(prod)}
+                          className="btn-secondary !py-2 !px-2.5 text-xs font-semibold"
+                          title="Book Custom Order"
+                        >
+                          Book
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -420,173 +494,481 @@ export default function ProductsPage() {
         </div>
       </main>
 
-      {/* 1. Compare Modal/Drawer */}
-      {showCompareDrawer && (
+      {/* 2. Quick View Modal with Multi-Image Gallery */}
+      {quickViewProduct && (() => {
+        const galleryList = (quickViewProduct.images && Array.isArray(quickViewProduct.images) && quickViewProduct.images.length > 0)
+          ? quickViewProduct.images
+          : [{ id: "1", url: quickViewProduct.image, is_primary: true, sort_order: 1 }];
+        
+        const activeImgObj = galleryList[quickViewActiveImageIndex] || galleryList[0];
+        const activeImgUrl = activeImgObj?.url || quickViewProduct.image;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setQuickViewProduct(null)} />
+            
+            <div className="glass-panel relative w-full max-w-2xl overflow-y-auto max-h-[90vh] rounded-2xl border border-white/10 bg-nex-ink p-6 shadow-glow-blue sm:p-8">
+              <button
+                onClick={() => setQuickViewProduct(null)}
+                className="absolute right-4 top-4 z-10 text-white/50 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+
+              <div className="flex flex-col gap-6 md:flex-row items-center md:items-start mt-2">
+                <div className="w-full md:w-1/2 space-y-3">
+                  <div className="relative aspect-square w-full rounded-2xl overflow-hidden bg-white/[0.02] border border-white/[0.08] p-3 flex items-center justify-center group">
+                    <img
+                      src={getSafeImageSrc(activeImgUrl)}
+                      alt={activeImgObj?.alt_text || quickViewProduct.title}
+                      className="object-contain max-h-full max-w-full cursor-zoom-in transition-transform duration-300 group-hover:scale-105"
+                      onClick={() => setZoomModalImageUrl(activeImgUrl)}
+                    />
+                    <div className="absolute top-2.5 left-2.5 bg-black/75 backdrop-blur-sm text-white px-2 py-0.5 rounded-full text-[10px] font-bold">
+                      {quickViewActiveImageIndex + 1} / {galleryList.length}
+                    </div>
+                    <button
+                      onClick={() => setZoomModalImageUrl(activeImgUrl)}
+                      className="absolute top-2.5 right-2.5 bg-black/60 hover:bg-black/80 text-white p-1.5 rounded-full backdrop-blur-sm transition-all"
+                      title="Click to Zoom Fullscreen"
+                    >
+                      <ZoomIn className="h-4 w-4" />
+                    </button>
+                    {galleryList.length > 1 && (
+                      <>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setQuickViewActiveImageIndex((prev) => (prev > 0 ? prev - 1 : galleryList.length - 1));
+                          }}
+                          className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-nex-blue text-white p-1.5 rounded-full backdrop-blur-sm"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setQuickViewActiveImageIndex((prev) => (prev < galleryList.length - 1 ? prev + 1 : 0));
+                          }}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-nex-blue text-white p-1.5 rounded-full backdrop-blur-sm"
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+
+                  {galleryList.length > 1 && (
+                    <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+                      {galleryList.map((imgItem: any, idx: number) => (
+                        <button
+                          key={imgItem.id || idx}
+                          onClick={() => setQuickViewActiveImageIndex(idx)}
+                          className={cn(
+                            "relative h-14 w-14 shrink-0 rounded-xl overflow-hidden border p-1 transition-all",
+                            quickViewActiveImageIndex === idx
+                              ? "border-nex-blueLight bg-nex-blue/20 ring-2 ring-nex-blueLight/50"
+                              : "border-white/10 bg-white/5 hover:border-white/30"
+                          )}
+                        >
+                          <img src={getSafeImageSrc(imgItem.url)} alt={`Thumbnail ${idx + 1}`} className="object-contain h-full w-full" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex-1 min-w-0 text-left w-full space-y-4">
+                  <div>
+                    <span className="rounded-full bg-nex-blue/10 border border-nex-blue/20 px-2.5 py-0.5 text-[9px] font-bold uppercase text-nex-blueLight">
+                      {CATEGORIES.find((c) => c.val === quickViewProduct.category)?.label}
+                    </span>
+                    <h3 className="font-display text-xl font-bold text-white mt-2">{quickViewProduct.title}</h3>
+                    <p className="text-sm font-bold text-nex-blueLight mt-1">Rs. {(quickViewProduct.price ?? 0).toLocaleString("en-IN")}</p>
+                  </div>
+                  <p className="text-xs text-nex-mist leading-relaxed">{quickViewProduct.description}</p>
+                  <div className="border-t border-white/5 pt-3">
+                    <h4 className="text-xs font-semibold text-white/95 mb-2">Specifications:</h4>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[10px]">
+                      {Object.entries(quickViewProduct.specs || {}).map(([key, val]) => (
+                        <div key={key} className="flex justify-between border-b border-white/[0.02] pb-1 pr-1">
+                          <span className="text-nex-mist">{key}</span>
+                          <span className="text-white font-medium truncate max-w-[110px]">{val}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="pt-2">
+                    <button
+                      onClick={() => { setBookingProduct(quickViewProduct); setQuickViewProduct(null); }}
+                      className="btn-primary w-full !py-2.5 text-xs flex items-center justify-center gap-1.5"
+                    >
+                      <ShoppingBag className="h-4 w-4" /> Book Product Now
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 3. Fullscreen Zoom Modal */}
+      {zoomModalImageUrl && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-md p-4">
+          <button
+            onClick={() => setZoomModalImageUrl(null)}
+            className="absolute right-6 top-6 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+          >
+            <X className="h-6 w-6" />
+          </button>
+          <div className="relative h-[85vh] w-full max-w-5xl flex items-center justify-center p-4">
+            <img src={getSafeImageSrc(zoomModalImageUrl)} alt="Zoom View" className="max-h-full max-w-full object-contain rounded-2xl shadow-glow-blue" />
+          </div>
+        </div>
+      )}
+
+      {/* 4. Customer Laptop Enquiry Form Modal */}
+      {showLaptopEnquiryModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setShowCompareDrawer(false)} />
+          <div className="absolute inset-0 bg-black/85 backdrop-blur-md" onClick={() => !enquirySubmitting && setShowLaptopEnquiryModal(false)} />
           
-          <div className="glass-panel relative w-full max-w-3xl overflow-hidden rounded-2xl border border-white/10 bg-nex-ink p-6 shadow-glow-blue sm:p-8">
+          <div className="glass-panel relative w-full max-w-2xl overflow-y-auto max-h-[90vh] rounded-2xl border border-white/10 bg-nex-ink p-6 shadow-glow-blue sm:p-8 z-10">
             <button
-              onClick={() => setShowCompareDrawer(false)}
-              className="absolute right-4 top-4 text-white/50 hover:text-white"
+              onClick={() => !enquirySubmitting && setShowLaptopEnquiryModal(false)}
+              className="absolute right-4 top-4 text-white/50 hover:text-white z-10"
+              disabled={enquirySubmitting}
             >
               <X className="h-5 w-5" />
             </button>
 
-            <h3 className="font-display text-lg font-bold text-white flex items-center gap-2 mb-6">
-              <GitCompare className="h-5 w-5 text-nex-blueLight" />
-              Side-by-Side Product Comparison
-            </h3>
+            {enquirySuccessRef ? (
+              <div className="text-center py-6 space-y-4">
+                <div className="h-16 w-16 rounded-full bg-green-500/10 border border-green-500/30 text-green-400 flex items-center justify-center mx-auto shadow-glow-blue">
+                  <CheckCircle2 className="h-8 w-8" />
+                </div>
+                <div>
+                  <h3 className="font-display text-xl font-bold text-white">✓ Laptop Enquiry Submitted</h3>
+                  <p className="text-xs text-nex-mist mt-1 max-w-md mx-auto leading-relaxed">
+                    Your laptop requirement has been sent to NexByte Technologies. Our team will review your requirement and contact you shortly.
+                  </p>
+                </div>
 
-            {compareIds.length === 0 ? (
-              <p className="text-xs text-nex-mist py-8 text-center">No products selected. Click Compare on product cards.</p>
-            ) : compareIds.length === 1 ? (
-              <div className="text-center py-8">
-                <p className="text-xs text-nex-mist">Compare requires at least 2 selected products.</p>
-                <div className="mt-4 inline-flex items-center gap-3">
-                  {products.filter(p => p.id === compareIds[0]).map(p => (
-                    <span key={p.id} className="text-xs font-semibold text-white/90 glass-panel px-3 py-1.5 rounded-full">{p.title}</span>
-                  ))}
+                <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 max-w-sm mx-auto">
+                  <span className="text-[10px] text-nex-mist uppercase font-bold block">Reference ID</span>
+                  <span className="font-mono text-base font-bold text-nex-blueLight tracking-wider mt-0.5 block">{enquirySuccessRef}</span>
+                </div>
+
+                <div className="pt-4 flex flex-col sm:flex-row justify-center gap-3">
+                  <a
+                    href={`/track?search=${encodeURIComponent(enquirySuccessRef)}`}
+                    className="btn-primary !py-2.5 !px-6 text-xs flex items-center justify-center gap-2"
+                  >
+                    <Search className="h-4 w-4" /> Track Enquiry
+                  </a>
+                  <button
+                    onClick={() => {
+                      setShowLaptopEnquiryModal(false);
+                      setEnquirySuccessRef(null);
+                    }}
+                    className="btn-secondary !py-2.5 !px-6 text-xs"
+                  >
+                    Continue Browsing
+                  </button>
                 </div>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs text-left text-white border-collapse">
-                  <thead>
-                    <tr className="border-b border-white/10">
-                      <th className="py-3 px-2 text-nex-mist">Specs</th>
-                      {compareIds.map((id) => {
-                        const p = products.find((prod) => prod.id === id);
-                        return (
-                          <th key={id} className="py-3 px-4 font-bold text-nex-blueLight">
-                            {p?.title}
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="border-b border-white/[0.04]">
-                      <td className="py-3 px-2 text-nex-mist font-semibold">Ref. Price</td>
-                      {compareIds.map((id) => {
-                        const p = products.find((prod) => prod.id === id);
-                        return (
-                          <td key={id} className="py-3 px-4 font-bold text-white">
-                            Rs. {(p?.price ?? 0).toLocaleString("en-IN")}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                    <tr className="border-b border-white/[0.04]">
-                      <td className="py-3 px-2 text-nex-mist font-semibold">Category</td>
-                      {compareIds.map((id) => {
-                        const p = products.find((prod) => prod.id === id);
-                        return (
-                          <td key={id} className="py-3 px-4 text-white/90">
-                            {CATEGORIES.find((c) => c.val === p?.category)?.label}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                    {/* Gather specs keys */}
-                    {["Processor", "RAM", "GPU", "Storage", "Display", "Condition"].map((key) => (
-                      <tr key={key} className="border-b border-white/[0.04] hover:bg-white/[0.02]">
-                        <td className="py-3 px-2 text-nex-mist font-semibold">{key}</td>
-                        {compareIds.map((id) => {
-                          const p = products.find((prod) => prod.id === id);
-                          return (
-                            <td key={id} className="py-3 px-4 text-white/90">
-                              {p?.specs[key] || p?.specs[key.toLowerCase()] || "N/A"}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="h-10 w-10 rounded-xl bg-nex-blue/10 border border-nex-blue/20 text-nex-blueLight flex items-center justify-center shrink-0">
+                    <Laptop className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-display text-lg font-bold text-white">Find the Right Laptop</h3>
+                    <p className="text-xs text-nex-mist">Tell us what you&apos;re looking for and NexByte will help you find a suitable laptop.</p>
+                  </div>
+                </div>
+
+                {enquiryError && (
+                  <div className="mb-4 rounded-xl bg-red-500/10 border border-red-500/20 p-3 text-xs text-red-400 font-semibold">
+                    {enquiryError}
+                  </div>
+                )}
+
+                <form onSubmit={handleLaptopEnquirySubmit} className="space-y-4 text-xs">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-white/80 font-semibold">Customer Name *</label>
+                      <input
+                        type="text"
+                        required
+                        value={enquiryName}
+                        onChange={(e) => setEnquiryName(e.target.value)}
+                        placeholder="e.g. Meena Sharma"
+                        className="w-full rounded-xl bg-white/[0.03] border border-white/10 px-3 py-2.5 text-xs text-white focus:outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-white/80 font-semibold">Phone Number *</label>
+                      <input
+                        type="tel"
+                        required
+                        value={enquiryPhone}
+                        onChange={(e) => setEnquiryPhone(e.target.value)}
+                        placeholder="e.g. 9876543210"
+                        className="w-full rounded-xl bg-white/[0.03] border border-white/10 px-3 py-2.5 text-xs text-white focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-white/80 font-semibold">Email Address</label>
+                      <input
+                        type="email"
+                        value={enquiryEmail}
+                        onChange={(e) => setEnquiryEmail(e.target.value)}
+                        placeholder="e.g. meena@gmail.com"
+                        className="w-full rounded-xl bg-white/[0.03] border border-white/10 px-3 py-2.5 text-xs text-white focus:outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-white/80 font-semibold">City / Location *</label>
+                      <input
+                        type="text"
+                        required
+                        value={enquiryCity}
+                        onChange={(e) => setEnquiryCity(e.target.value)}
+                        placeholder="e.g. Bengaluru"
+                        className="w-full rounded-xl bg-white/[0.03] border border-white/10 px-3 py-2.5 text-xs text-white focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-white/80 font-semibold">Laptop Requirement *</label>
+                      <select
+                        value={enquiryType}
+                        onChange={(e) => setEnquiryType(e.target.value)}
+                        className="w-full rounded-xl bg-nex-ink border border-white/10 px-3 py-2.5 text-xs text-white focus:outline-none"
+                      >
+                        <option value="Business Laptop">Business Laptop</option>
+                        <option value="Gaming Laptop">Gaming Laptop</option>
+                        <option value="Student Laptop">Student Laptop</option>
+                        <option value="Programming Laptop">Programming Laptop</option>
+                        <option value="Editing / Creator Laptop">Editing / Creator Laptop</option>
+                        <option value="Workstation">Workstation</option>
+                        <option value="Premium Used Laptop">Premium Used Laptop</option>
+                        <option value="Second-Hand Laptop">Second-Hand Laptop</option>
+                        <option value="New Laptop">New Laptop</option>
+                        <option value="Not Sure / Need Recommendation">Not Sure / Need Recommendation</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-white/80 font-semibold">Budget Range *</label>
+                      <select
+                        value={enquiryBudget}
+                        onChange={(e) => setEnquiryBudget(e.target.value)}
+                        className="w-full rounded-xl bg-nex-ink border border-white/10 px-3 py-2.5 text-xs text-white focus:outline-none"
+                      >
+                        <option value="Under ₹20,000">Under ₹20,000</option>
+                        <option value="₹20,000 – ₹30,000">₹20,000 – ₹30,000</option>
+                        <option value="₹30,000 – ₹40,000">₹30,000 – ₹40,000</option>
+                        <option value="₹40,000 – ₹50,000">₹40,000 – ₹50,000</option>
+                        <option value="₹50,000 – ₹70,000">₹50,000 – ₹70,000</option>
+                        <option value="₹70,000 – ₹1,00,000">₹70,000 – ₹1,00,000</option>
+                        <option value="₹1,00,000+">₹1,00,000+</option>
+                        <option value="Custom Budget">Custom Budget</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-white/70">Preferred Brand</label>
+                      <select
+                        value={enquiryBrand}
+                        onChange={(e) => setEnquiryBrand(e.target.value)}
+                        className="w-full rounded-lg bg-nex-ink border border-white/10 px-2 py-1.5 text-[11px] text-white"
+                      >
+                        <option value="Any Brand">Any Brand</option>
+                        <option value="Lenovo">Lenovo</option>
+                        <option value="Dell">Dell</option>
+                        <option value="HP">HP</option>
+                        <option value="ASUS">ASUS</option>
+                        <option value="Acer">Acer</option>
+                        <option value="Apple">Apple</option>
+                        <option value="MSI">MSI</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-white/70">Processor</label>
+                      <select
+                        value={enquiryProcessor}
+                        onChange={(e) => setEnquiryProcessor(e.target.value)}
+                        className="w-full rounded-lg bg-nex-ink border border-white/10 px-2 py-1.5 text-[11px] text-white"
+                      >
+                        <option value="No Preference">No Preference</option>
+                        <option value="Intel Core i3">Intel Core i3</option>
+                        <option value="Intel Core i5">Intel Core i5</option>
+                        <option value="Intel Core i7">Intel Core i7</option>
+                        <option value="Intel Core i9">Intel Core i9</option>
+                        <option value="AMD Ryzen 3">AMD Ryzen 3</option>
+                        <option value="AMD Ryzen 5">AMD Ryzen 5</option>
+                        <option value="AMD Ryzen 7">AMD Ryzen 7</option>
+                        <option value="AMD Ryzen 9">AMD Ryzen 9</option>
+                        <option value="Apple Silicon">Apple Silicon</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-white/70">RAM</label>
+                      <select
+                        value={enquiryRam}
+                        onChange={(e) => setEnquiryRam(e.target.value)}
+                        className="w-full rounded-lg bg-nex-ink border border-white/10 px-2 py-1.5 text-[11px] text-white"
+                      >
+                        <option value="No Preference">No Preference</option>
+                        <option value="8 GB">8 GB</option>
+                        <option value="16 GB">16 GB</option>
+                        <option value="32 GB">32 GB</option>
+                        <option value="64 GB+">64 GB+</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-white/70">Storage</label>
+                      <select
+                        value={enquiryStorage}
+                        onChange={(e) => setEnquiryStorage(e.target.value)}
+                        className="w-full rounded-lg bg-nex-ink border border-white/10 px-2 py-1.5 text-[11px] text-white"
+                      >
+                        <option value="No Preference">No Preference</option>
+                        <option value="256 GB">256 GB</option>
+                        <option value="512 GB">512 GB</option>
+                        <option value="1 TB">1 TB</option>
+                        <option value="2 TB+">2 TB+</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-white/70">GPU</label>
+                      <select
+                        value={enquiryGpu}
+                        onChange={(e) => setEnquiryGpu(e.target.value)}
+                        className="w-full rounded-lg bg-nex-ink border border-white/10 px-2 py-1.5 text-[11px] text-white"
+                      >
+                        <option value="No Preference">No Preference</option>
+                        <option value="Integrated Graphics">Integrated Graphics</option>
+                        <option value="Dedicated Graphics">Dedicated Graphics</option>
+                        <option value="RTX 3050">RTX 3050</option>
+                        <option value="RTX 4050">RTX 4050</option>
+                        <option value="RTX 4060+">RTX 4060+</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-white/70">Condition</label>
+                      <select
+                        value={enquiryCondition}
+                        onChange={(e) => setEnquiryCondition(e.target.value)}
+                        className="w-full rounded-lg bg-nex-ink border border-white/10 px-2 py-1.5 text-[11px] text-white"
+                      >
+                        <option value="Any">Any</option>
+                        <option value="Brand New">Brand New</option>
+                        <option value="Premium Used">Premium Used</option>
+                        <option value="Second Hand">Second Hand</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-white/70">Primary Use Case</label>
+                      <select
+                        value={enquiryUseCase}
+                        onChange={(e) => setEnquiryUseCase(e.target.value)}
+                        className="w-full rounded-lg bg-nex-ink border border-white/10 px-2 py-1.5 text-[11px] text-white"
+                      >
+                        <option value="General Use">General Use</option>
+                        <option value="Student">Student</option>
+                        <option value="Office">Office</option>
+                        <option value="Programming">Programming</option>
+                        <option value="Gaming">Gaming</option>
+                        <option value="Video Editing">Video Editing</option>
+                        <option value="Graphic Design">Graphic Design</option>
+                        <option value="3D / CAD">3D / CAD</option>
+                        <option value="Business">Business</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-white/80 font-semibold">Additional Requirements</label>
+                    <textarea
+                      value={enquiryRequirements}
+                      onChange={(e) => setEnquiryRequirements(e.target.value)}
+                      placeholder='e.g. Need an i5/16GB laptop with good battery backup for programming under ₹45,000.'
+                      rows={2}
+                      className="w-full rounded-xl bg-white/[0.03] border border-white/10 px-3 py-2 text-xs text-white focus:outline-none resize-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-white/80 font-semibold block">Preferred Contact Method</label>
+                    <div className="flex items-center gap-6 text-xs text-white">
+                      {["WhatsApp", "Phone Call", "Email"].map((mode) => (
+                        <label key={mode} className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="contactMode"
+                            checked={enquiryContact === mode}
+                            onChange={() => setEnquiryContact(mode)}
+                            className="text-nex-blue focus:ring-0"
+                          />
+                          <span>{mode}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-white/10 flex justify-end gap-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setShowLaptopEnquiryModal(false)}
+                      className="btn-secondary !py-2 !px-4"
+                      disabled={enquirySubmitting}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={enquirySubmitting}
+                      className="btn-primary !py-2 !px-6 flex items-center gap-2"
+                    >
+                      {enquirySubmitting ? (
+                        <>
+                          <div className="h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          Submitting...
+                        </>
+                      ) : (
+                        "Submit Laptop Enquiry"
+                      )}
+                    </button>
+                  </div>
+                </form>
               </div>
             )}
-            
-            <div className="mt-8 flex justify-end">
-              <button onClick={() => setCompareIds([])} className="btn-secondary !py-2 !px-4 text-xs mr-2">
-                Clear Compare List
-              </button>
-              <button onClick={() => setShowCompareDrawer(false)} className="btn-primary !py-2 !px-5 text-xs">
-                Close Table
-              </button>
-            </div>
           </div>
         </div>
       )}
 
-      {/* 2. Quick View Modal */}
-      {quickViewProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setQuickViewProduct(null)} />
-          
-          <div className="glass-panel relative w-full max-w-xl overflow-hidden rounded-2xl border border-white/10 bg-nex-ink p-6 shadow-glow-blue sm:p-8">
-            <button
-              onClick={() => setQuickViewProduct(null)}
-              className="absolute right-4 top-4 text-white/50 hover:text-white"
-            >
-              <X className="h-5 w-5" />
-            </button>
-
-            <div className="flex flex-col gap-6 sm:flex-row items-center sm:items-start mt-4">
-              <div className="relative h-40 w-40 rounded-xl overflow-hidden bg-white/[0.02] border border-white/[0.08] p-2 flex items-center justify-center shrink-0">
-                <Image
-                  src={quickViewProduct.image}
-                  alt={quickViewProduct.title}
-                  width={140}
-                  height={140}
-                  className="object-contain"
-                />
-              </div>
-
-              <div className="flex-1 min-w-0 text-center sm:text-left">
-                <span className="rounded-full bg-nex-blue/10 border border-nex-blue/20 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-nex-blueLight">
-                  {CATEGORIES.find((c) => c.val === quickViewProduct.category)?.label}
-                </span>
-                <h3 className="font-display text-lg font-bold text-white mt-2">
-                  {quickViewProduct.title}
-                </h3>
-                <p className="text-xs text-white/80 mt-1">
-                  Rs. {(quickViewProduct.price ?? 0).toLocaleString("en-IN")}
-                </p>
-                <p className="text-[11px] text-nex-mist mt-3 leading-relaxed">
-                  {quickViewProduct.description}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-6 border-t border-white/5 pt-4">
-              <h4 className="text-xs font-semibold text-white/95 mb-2">Specifications:</h4>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[10px]">
-                {Object.entries(quickViewProduct.specs).map(([key, val]) => (
-                  <div key={key} className="flex justify-between border-b border-white/[0.02] pb-1">
-                    <span className="text-nex-mist">{key}</span>
-                    <span className="text-white font-medium truncate max-w-[120px]">{val}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-8 flex justify-end gap-2">
-              <button
-                onClick={() => {
-                  setBookingProduct(quickViewProduct);
-                  setQuickViewProduct(null);
-                }}
-                className="btn-primary !py-2 !px-4 text-xs"
-              >
-                Book Product
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 3. Booking / Enquiry Modal */}
+      {/* 5. Booking Modal */}
       {bookingProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => { setBookingProduct(null); setSuccessPopup(false); }} />
@@ -600,182 +982,99 @@ export default function ProductsPage() {
             </button>
 
             {successPopup ? (
-              /* Upgraded Success Popup */
-              <div className="text-center py-6 space-y-5">
-                <CheckCircle2 className="h-12 w-12 text-green-400 mx-auto animate-bounce" />
-                <div>
-                  <h3 className="font-display text-lg font-bold text-white">Booking Submitted Successfully!</h3>
-                  <p className="text-xs text-nex-mist mt-1 leading-relaxed">
-                    Your request has been logged in our database. Reference ID is:
-                  </p>
-                  <div className="mt-3.5 inline-block rounded-xl bg-white/[0.04] border border-white/10 px-4 py-2 text-sm font-mono font-bold text-nex-blueLight shadow-inner">
-                    {createdBookingId}
-                  </div>
+              <div className="text-center py-4 space-y-3">
+                <div className="h-12 w-12 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="h-6 w-6" />
                 </div>
-
-                <div className="rounded-xl bg-white/[0.02] border border-white/5 p-3.5 text-[11px] text-nex-mist leading-relaxed">
-                  We will contact you shortly to confirm your booking. You can track your booking status anytime.
+                <h3 className="font-display text-lg font-bold text-white">Booking Request Received!</h3>
+                <p className="text-xs text-nex-mist">Reference ID:</p>
+                <div className="p-3 rounded-xl bg-white/[0.03] border border-white/10 font-mono text-sm font-bold text-nex-blueLight">
+                  {createdBookingId}
                 </div>
-
-                <div className="pt-2 flex flex-col gap-2">
+                <div className="pt-4 flex justify-center gap-2">
+                  <a
+                    href={`/track?search=${encodeURIComponent(createdBookingId || "")}`}
+                    className="btn-primary !py-2 !px-4 text-xs flex items-center gap-1"
+                  >
+                    Track Booking
+                  </a>
                   <button
                     onClick={() => { setBookingProduct(null); setSuccessPopup(false); }}
-                    className="btn-primary w-full py-3 text-xs"
+                    className="btn-secondary !py-2 !px-4 text-xs"
                   >
-                    Continue Browsing
+                    Close
                   </button>
                 </div>
               </div>
             ) : (
-              /* Booking Form */
-              <>
-                <h3 className="font-display text-lg font-bold text-white mb-2">
-                  Product Enquiry / Booking
-                </h3>
-                <p className="text-xs text-nex-mist mb-5">
-                  Interested Product: <span className="text-nex-blueLight font-semibold">{bookingProduct.title}</span>
-                </p>
+              <div>
+                <h3 className="font-display text-base font-bold text-white mb-1">Book System Item</h3>
+                <p className="text-xs text-nex-mist mb-4">Item: <span className="text-white font-semibold">{bookingProduct.title}</span></p>
 
                 {errorMsg && (
-                  <div className="mb-4 rounded-xl bg-red-500/10 border border-red-500/20 p-3.5 text-xs text-red-400 font-semibold">
+                  <div className="mb-3 p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-[11px] text-red-400 font-semibold">
                     {errorMsg}
                   </div>
                 )}
 
-                <form onSubmit={handleBookSubmit} className="space-y-4 max-h-[60vh] overflow-y-auto pr-1 scrollbar-thin">
-                  {/* Honeypot hidden input */}
-                  <input
-                    type="text"
-                    value={honeypot}
-                    onChange={(e) => setHoneypot(e.target.value)}
-                    className="hidden"
-                    tabIndex={-1}
-                    autoComplete="off"
-                  />
+                <form onSubmit={handleBookSubmit} className="space-y-3 text-xs">
+                  <input type="text" value={honeypot} onChange={(e) => setHoneypot(e.target.value)} className="hidden" tabIndex={-1} autoComplete="off" />
 
-                  {/* Customer Name */}
-                  <div className="space-y-1">
-                    <label htmlFor="prod-book-name" className="text-xs font-semibold text-white/85">Customer Name *</label>
+                  <div>
+                    <label className="text-[11px] text-white/80 font-semibold">Full Name *</label>
                     <input
-                      id="prod-book-name"
                       type="text"
                       required
                       value={bookName}
                       onChange={(e) => setBookName(e.target.value)}
                       placeholder="e.g. Ramesh Kumar"
-                      className="w-full rounded-xl bg-white/[0.04] border border-white/[0.08] px-3.5 py-2.5 text-xs text-white focus:border-nex-blue/50 focus:outline-none"
+                      className="w-full rounded-xl bg-white/[0.03] border border-white/10 px-3 py-2 text-xs text-white focus:outline-none"
                     />
                   </div>
 
-                  {/* Phone & Email */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label htmlFor="prod-book-phone" className="text-xs font-semibold text-white/85">Phone Number *</label>
-                      <input
-                        id="prod-book-phone"
-                        type="tel"
-                        required
-                        value={bookPhone}
-                        onChange={(e) => setBookPhone(e.target.value)}
-                        placeholder="e.g. 9876543210"
-                        className="w-full rounded-xl bg-white/[0.04] border border-white/[0.08] px-3.5 py-2.5 text-xs text-white focus:border-nex-blue/50 focus:outline-none"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label htmlFor="prod-book-email" className="text-xs font-semibold text-white/85">Email Address</label>
-                      <input
-                        id="prod-book-email"
-                        type="email"
-                        value={bookEmail}
-                        onChange={(e) => setBookEmail(e.target.value)}
-                        placeholder="e.g. ramesh@gmail.com"
-                        className="w-full rounded-xl bg-white/[0.04] border border-white/[0.08] px-3.5 py-2.5 text-xs text-white focus:border-nex-blue/50 focus:outline-none"
-                      />
-                    </div>
+                  <div>
+                    <label className="text-[11px] text-white/80 font-semibold">Phone Number *</label>
+                    <input
+                      type="tel"
+                      required
+                      value={bookPhone}
+                      onChange={(e) => setBookPhone(e.target.value)}
+                      placeholder="e.g. 9876543210"
+                      className="w-full rounded-xl bg-white/[0.03] border border-white/10 px-3 py-2 text-xs text-white focus:outline-none"
+                    />
                   </div>
 
-                  {/* City & State */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label htmlFor="prod-book-city" className="text-xs font-semibold text-white/85">City *</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[11px] text-white/80 font-semibold">City</label>
                       <input
-                        id="prod-book-city"
                         type="text"
-                        required
                         value={bookCity}
                         onChange={(e) => setBookCity(e.target.value)}
-                        placeholder="e.g. Bengaluru"
-                        className="w-full rounded-xl bg-white/[0.04] border border-white/[0.08] px-3.5 py-2.5 text-xs text-white focus:border-nex-blue/50 focus:outline-none"
+                        placeholder="Bengaluru"
+                        className="w-full rounded-xl bg-white/[0.03] border border-white/10 px-3 py-2 text-xs text-white focus:outline-none"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-xs font-semibold text-white/85">State</label>
+                    <div>
+                      <label className="text-[11px] text-white/80 font-semibold">Budget</label>
                       <input
-                        type="text"
-                        disabled
-                        value="Karnataka"
-                        className="w-full rounded-xl bg-white/[0.02] border border-white/[0.04] px-3.5 py-2.5 text-xs text-white/40 focus:outline-none cursor-not-allowed"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Budget & Quantity */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label htmlFor="prod-book-budget" className="text-xs font-semibold text-white/85">Budget (optional)</label>
-                      <input
-                        id="prod-book-budget"
                         type="text"
                         value={bookBudget}
                         onChange={(e) => setBookBudget(e.target.value)}
-                        placeholder="e.g. Rs. 40,000"
-                        className="w-full rounded-xl bg-white/[0.04] border border-white/[0.08] px-3.5 py-2.5 text-xs text-white focus:border-nex-blue/50 focus:outline-none"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label htmlFor="prod-book-qty" className="text-xs font-semibold text-white/85">Quantity *</label>
-                      <input
-                        id="prod-book-qty"
-                        type="number"
-                        min={1}
-                        max={100}
-                        required
-                        value={bookQuantity}
-                        onChange={(e) => setBookQuantity(e.target.value)}
-                        className="w-full rounded-xl bg-white/[0.04] border border-white/[0.08] px-3.5 py-2.5 text-xs text-white focus:border-nex-blue/50 focus:outline-none"
+                        placeholder={`Rs. ${bookingProduct.price}`}
+                        className="w-full rounded-xl bg-white/[0.03] border border-white/10 px-3 py-2 text-xs text-white focus:outline-none"
                       />
                     </div>
                   </div>
 
-                  {/* Preferred Contact Mode */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-white/85">Preferred Contact Mode *</label>
-                    <div className="flex gap-4">
-                      {["WhatsApp", "Call", "Email"].map((mode) => (
-                        <label key={mode} className="flex items-center gap-2 cursor-pointer text-xs text-white/80 select-none">
-                          <input
-                            type="radio"
-                            name="contactMode"
-                            checked={bookPreferredContact === mode}
-                            onChange={() => setBookPreferredContact(mode)}
-                            className="bg-nex-black border-white/20 text-nex-blue focus:ring-0 h-4 w-4"
-                          />
-                          <span>{mode}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Message */}
-                  <div className="space-y-1">
-                    <label htmlFor="prod-book-msg" className="text-xs font-semibold text-white/85">Message Notes (optional)</label>
+                  <div>
+                    <label className="text-[11px] text-white/80 font-semibold">Message / Specifications</label>
                     <textarea
-                      id="prod-book-msg"
                       value={bookMessage}
                       onChange={(e) => setBookMessage(e.target.value)}
-                      placeholder="e.g. Need details on courier shipping or custom upgrades..."
-                      rows={3}
-                      className="w-full rounded-xl bg-white/[0.04] border border-white/[0.08] px-3.5 py-2.5 text-xs text-white focus:border-nex-blue/50 focus:outline-none resize-none"
+                      placeholder="Add requirements..."
+                      rows={2}
+                      className="w-full rounded-xl bg-white/[0.03] border border-white/10 px-3 py-2 text-xs text-white focus:outline-none resize-none"
                     />
                   </div>
 
@@ -783,20 +1082,20 @@ export default function ProductsPage() {
                     <button
                       type="button"
                       onClick={() => setBookingProduct(null)}
-                      className="btn-secondary !py-2.5 !px-4 text-xs"
+                      className="btn-secondary !py-2 !px-3.5"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={submitting}
-                      className="btn-primary !py-2.5 !px-5 text-xs flex items-center gap-1.5"
+                      className="btn-primary !py-2 !px-5"
                     >
-                      {submitting ? "Booking..." : "Submit Booking"}
+                      {submitting ? "Submitting..." : "Confirm Booking"}
                     </button>
                   </div>
                 </form>
-              </>
+              </div>
             )}
           </div>
         </div>
@@ -805,8 +1104,4 @@ export default function ProductsPage() {
       <Footer />
     </>
   );
-}
-
-function cn(...classes: any[]) {
-  return classes.filter(Boolean).join(" ");
 }

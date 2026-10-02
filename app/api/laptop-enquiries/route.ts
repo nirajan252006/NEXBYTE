@@ -8,7 +8,7 @@ export async function OPTIONS() {
     status: 204,
     headers: {
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
       "Content-Type": "application/json",
     },
@@ -27,35 +27,46 @@ export async function POST(req: Request) {
       );
     }
 
-    console.log("API Called", "/api/laptop-enquiries", body);
-
     const name = body.customer_name || body.customerName || body.name;
     const phone = body.phone;
 
     if (!name || !phone) {
       return NextResponse.json(
-        { success: false, message: "Customer name and phone are required.", error: "Missing required fields.", code: "VALIDATION_ERROR" },
+        { success: false, message: "Customer name and phone number are required.", error: "Missing required fields.", code: "VALIDATION_ERROR" },
         { status: 400, headers: JSON_HEADERS }
       );
     }
 
     const saved = await dbHelper.laptopEnquiries.create({
-      ...body,
       customer_name: name,
       phone,
+      email: body.email || "",
+      city: body.city || "",
+      laptop_type: body.laptop_type || body.laptopRequirement || "General Laptop",
+      budget: body.budget || "Unspecified",
+      brand_preference: body.brand_preference || body.preferredBrand || "Any Brand",
+      processor_preference: body.processor_preference || body.processor || "No Preference",
+      ram_preference: body.ram_preference || body.ram || "No Preference",
+      storage_preference: body.storage_preference || body.storage || "No Preference",
+      gpu_preference: body.gpu_preference || body.gpu || "No Preference",
+      condition: body.condition || "Any",
+      use_case: body.use_case || body.use || "General Use",
+      requirements: body.requirements || body.additionalRequirements || body.message || "",
+      message: body.requirements || body.additionalRequirements || body.message || "",
+      preferred_contact: body.preferred_contact || body.preferredContact || "WhatsApp",
     });
 
     return NextResponse.json(
       {
         success: true,
-        id: saved.id,
+        referenceId: saved.reference_id,
         enquiry: saved,
         message: "Laptop Enquiry Submitted Successfully",
       },
-      { status: 200, headers: JSON_HEADERS }
+      { status: 201, headers: JSON_HEADERS }
     );
   } catch (error: any) {
-    console.error("Laptop Enquiry API Error:", error);
+    console.error("Laptop Enquiry POST API Error:", error);
     return NextResponse.json(
       { success: false, message: error.message || "Failed to submit laptop enquiry.", error: error.message, code: "SERVER_ERROR" },
       { status: 500, headers: JSON_HEADERS }
@@ -63,13 +74,80 @@ export async function POST(req: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+
     const list = await dbHelper.laptopEnquiries.list();
+
+    if (id) {
+      const match = list.find((e: any) => e.id === id || e.reference_id?.toLowerCase() === id.toLowerCase());
+      if (!match) {
+        return NextResponse.json(
+          { success: false, message: "Enquiry not found." },
+          { status: 404, headers: JSON_HEADERS }
+        );
+      }
+      return NextResponse.json({ success: true, enquiry: match }, { status: 200, headers: JSON_HEADERS });
+    }
+
     return NextResponse.json({ success: true, enquiries: list }, { status: 200, headers: JSON_HEADERS });
   } catch (error: any) {
     return NextResponse.json(
       { success: false, message: error.message || "Failed to fetch enquiries.", error: error.message, code: "SERVER_ERROR" },
+      { status: 500, headers: JSON_HEADERS }
+    );
+  }
+}
+
+export async function PUT(req: Request) {
+  try {
+    const body = await req.json();
+    const { id, ...updates } = body;
+
+    if (!id) {
+      return NextResponse.json(
+        { success: false, message: "Enquiry ID is required for update." },
+        { status: 400, headers: JSON_HEADERS }
+      );
+    }
+
+    const updated = await dbHelper.laptopEnquiries.update(id, updates);
+
+    return NextResponse.json(
+      { success: true, enquiry: updated, message: "Enquiry updated successfully." },
+      { status: 200, headers: JSON_HEADERS }
+    );
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, message: error.message || "Failed to update enquiry.", error: error.message, code: "SERVER_ERROR" },
+      { status: 500, headers: JSON_HEADERS }
+    );
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json(
+        { success: false, message: "Enquiry ID is required for deletion." },
+        { status: 400, headers: JSON_HEADERS }
+      );
+    }
+
+    await dbHelper.laptopEnquiries.delete(id);
+
+    return NextResponse.json(
+      { success: true, message: "Enquiry deleted successfully." },
+      { status: 200, headers: JSON_HEADERS }
+    );
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, message: error.message || "Failed to delete enquiry.", error: error.message, code: "SERVER_ERROR" },
       { status: 500, headers: JSON_HEADERS }
     );
   }

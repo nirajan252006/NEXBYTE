@@ -31,6 +31,11 @@ export default function AdminDashboardHome() {
     totalBookings: 0,
     totalRevenue: 0,
     latestCustomersCount: 0,
+    totalInternships: 0,
+    pendingInternships: 0,
+    activeInternships: 0,
+    completedInternships: 0,
+    certificatesIssued: 0,
   });
 
   const [latestCustomers, setLatestCustomers] = useState<any[]>([]);
@@ -39,11 +44,13 @@ export default function AdminDashboardHome() {
   const [activities, setActivities] = useState<any[]>([]);
 
   const loadDashboardData = async () => {
-    const [bList, pList, notifList, userList] = await Promise.all([
+    const [bList, pList, notifList, userList, internList, certList] = await Promise.all([
       dbHelper.bookings.list(),
       dbHelper.products.list(),
       dbHelper.notifications.list(),
-      dbHelper.users.list()
+      dbHelper.users.list(),
+      dbHelper.internships.list(),
+      dbHelper.certificates.list(),
     ]);
 
     const todayStr = new Date().toDateString();
@@ -72,8 +79,13 @@ export default function AdminDashboardHome() {
       bookingsCompleted: completedCount,
       bookingsCancelled: cancelledCount,
       totalBookings: bList.length,
-      totalRevenue: calculatedRevenue || 148000, // fallback premium seed
+      totalRevenue: calculatedRevenue || 148000,
       latestCustomersCount: userList.filter((u) => u.role === "customer").length,
+      totalInternships: internList.length,
+      pendingInternships: internList.filter((i) => i.status === "pending").length,
+      activeInternships: internList.filter((i) => ["approved", "enrolled", "in_progress"].includes(i.status)).length,
+      completedInternships: internList.filter((i) => i.status === "completed").length,
+      certificatesIssued: certList.length,
     });
 
     setNotifications(notifList.filter((n) => n.status === "unread"));
@@ -217,6 +229,38 @@ export default function AdminDashboardHome() {
           </div>
         </div>
 
+      </div>
+
+      {/* Internship & Academy Metrics Bar */}
+      <div className="glass-panel p-5 rounded-2xl bg-nex-ink border border-cyan-500/20 shadow-glow-blue flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0">
+            <GraduationCap className="h-5 w-5" />
+          </div>
+          <div>
+            <h4 className="text-xs font-bold text-white">NexByte Academy &amp; Internship Metrics</h4>
+            <p className="text-[11px] text-nex-mist mt-0.5">Realtime count of active applications, active students, and verified certificates.</p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-4 text-center">
+          <div className="px-3 border-r border-white/10">
+            <span className="text-[9px] text-nex-mist uppercase block font-semibold">Total Apps</span>
+            <span className="font-bold text-white text-sm">{stats.totalInternships || 0}</span>
+          </div>
+          <div className="px-3 border-r border-white/10">
+            <span className="text-[9px] text-yellow-400 uppercase block font-semibold">Pending</span>
+            <span className="font-bold text-yellow-400 text-sm">{stats.pendingInternships || 0}</span>
+          </div>
+          <div className="px-3 border-r border-white/10">
+            <span className="text-[9px] text-cyan-400 uppercase block font-semibold">Active Students</span>
+            <span className="font-bold text-cyan-400 text-sm">{stats.activeInternships || 0}</span>
+          </div>
+          <div className="px-3">
+            <span className="text-[9px] text-teal-400 uppercase block font-semibold">Certificates</span>
+            <span className="font-bold text-teal-400 text-sm">{stats.certificatesIssued || 0}</span>
+          </div>
+        </div>
       </div>
 
       {/* Main dashboard columns */}

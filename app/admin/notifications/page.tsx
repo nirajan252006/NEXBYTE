@@ -5,6 +5,8 @@ import { Bell, CheckCircle, Calendar, MessageSquare, Laptop, Mail, GraduationCap
 import { dbHelper } from "@/lib/dbHelper";
 import { useRouter } from "next/navigation";
 
+import { Building2 } from "lucide-react";
+
 const TYPE_CONFIG: Record<string, { icon: React.ReactNode; color: string; route: string }> = {
   booking: { icon: <Calendar className="h-4 w-4" />, color: "text-nex-blueLight bg-nex-blue/10 border-nex-blue/20", route: "/admin/bookings" },
   review: { icon: <Star className="h-4 w-4" />, color: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20", route: "/admin/reviews" },
@@ -12,6 +14,9 @@ const TYPE_CONFIG: Record<string, { icon: React.ReactNode; color: string; route:
   laptop_enquiry: { icon: <Laptop className="h-4 w-4" />, color: "text-purple-400 bg-purple-500/10 border-purple-500/20", route: "/admin/laptop-enquiries" },
   internship: { icon: <GraduationCap className="h-4 w-4" />, color: "text-amber-400 bg-amber-500/10 border-amber-500/20", route: "/admin/internships" },
   training: { icon: <BookOpen className="h-4 w-4" />, color: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20", route: "/admin/training" },
+  reseller_application: { icon: <Building2 className="h-4 w-4" />, color: "text-purple-400 bg-purple-500/10 border-purple-500/20", route: "/admin/resellers" },
+  reseller_registration: { icon: <Building2 className="h-4 w-4" />, color: "text-purple-400 bg-purple-500/10 border-purple-500/20", route: "/admin/resellers" },
+  reseller_status: { icon: <Building2 className="h-4 w-4" />, color: "text-purple-400 bg-purple-500/10 border-purple-500/20", route: "/admin/resellers" },
 };
 
 export default function AdminNotificationsPage() {
@@ -77,6 +82,7 @@ export default function AdminNotificationsPage() {
         {[
           { key: "all", label: "All" },
           { key: "unread", label: `Unread (${unreadCount})` },
+          { key: "reseller_application", label: "Resellers" },
           { key: "booking", label: "Bookings" },
           { key: "review", label: "Reviews" },
           { key: "contact", label: "Contacts" },

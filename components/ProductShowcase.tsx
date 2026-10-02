@@ -6,6 +6,8 @@ import { ArrowUpRight } from "lucide-react";
 import { products } from "@/lib/data";
 import SectionHeading from "@/components/ui/SectionHeading";
 
+import { getSafeImageSrc } from "@/lib/utils";
+
 export default function ProductShowcase() {
   return (
     <section id="products" className="relative py-24 sm:py-32">
@@ -30,8 +32,8 @@ export default function ProductShowcase() {
             >
               <div className="relative h-44 w-full overflow-hidden border-b border-white/[0.06]">
                 <Image
-                  src={product.image}
-                  alt={product.title}
+                  src={getSafeImageSrc(product.image)}
+                  alt={product.title || "Product"}
                   fill
                   sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
                   className="object-cover object-center opacity-95 transition-transform duration-700 group-hover:scale-110"

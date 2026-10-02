@@ -6,6 +6,7 @@ const BookServiceReviewModal = dynamic(() => import("@/components/BookServiceRev
 const AdminFloatingButton = dynamic(() => import("@/components/AdminFloatingButton"), { ssr: false });
 const UnifiedBookingModal = dynamic(() => import("@/components/UnifiedBookingModal"), { ssr: false });
 const EnrollmentModal = dynamic(() => import("@/components/EnrollmentModal"), { ssr: false });
+const CartDrawer = dynamic(() => import("@/components/CartDrawer"), { ssr: false });
 
 export default function ClientModals() {
   return (
@@ -14,6 +15,7 @@ export default function ClientModals() {
       <AdminFloatingButton />
       <UnifiedBookingModal />
       <EnrollmentModal />
+      <CartDrawer />
     </>
   );
 }

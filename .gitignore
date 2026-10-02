@@ -34,3 +34,8 @@ logs/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# server node_modules & scratch
+server/node_modules/
+scratch/
+

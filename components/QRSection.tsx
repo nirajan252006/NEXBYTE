@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { MessageCircle, CalendarCheck } from "lucide-react";
 import { business } from "@/lib/data";
 import SectionHeading from "@/components/ui/SectionHeading";
+import { getSafeImageSrc } from "@/lib/utils";
 
 const cards = [
   {
@@ -51,7 +52,7 @@ export default function QRSection() {
             >
               <div className="relative h-36 w-36 shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-white p-2">
                 <Image
-                  src={card.qr}
+                  src={getSafeImageSrc(card.qr)}
                   alt={`QR code to ${card.title}`}
                   fill
                   sizes="144px"

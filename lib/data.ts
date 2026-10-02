@@ -30,11 +30,20 @@ export const business = {
   ],
 } as const;
 
+export type ProductImage = {
+  id: string;
+  url: string;
+  is_primary: boolean;
+  sort_order: number;
+  alt_text?: string;
+};
+
 export type Product = {
   id: string;
   title: string;
   description: string;
   image: string;
+  images?: ProductImage[];
   tags: string[];
   category: "gaming_pcs" | "business_laptops" | "premium_used_laptops" | "second_hand_laptops" | "servers" | "desktop_systems" | "accessories" | "storage" | "networking" | "monitors" | "cctv";
   price: number;
@@ -43,6 +52,11 @@ export type Product = {
   specs: {
     [key: string]: string;
   };
+  status?: string;
+  warranty?: string;
+  condition?: string;
+  featured?: boolean;
+  latest?: boolean;
 };
 
 export const products: Product[] = [

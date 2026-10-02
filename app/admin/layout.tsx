@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   Calendar,
   ShoppingBag,
+  Package,
   Wrench,
   GraduationCap,
   BookOpen,
@@ -29,7 +30,9 @@ import {
   MapPin,
   UserCheck,
   Menu,
-  X
+  X,
+  Store,
+  Sparkles
 } from "lucide-react";
 import { useState, useEffect, useMemo, Suspense } from "react";
 import { realtimeSync } from "@/lib/realtimeSync";
@@ -40,7 +43,9 @@ const STATIC_NAV_ITEMS = [
   { label: "Overview Dashboard", href: "/admin", icon: LayoutDashboard },
   { label: "Bookings Logs", href: "/admin/bookings", icon: Calendar },
   { label: "Products Catalog", href: "/admin/products", icon: ShoppingBag },
+  { label: "Orders Management", href: "/admin/orders", icon: Package },
   { label: "IT Services", href: "/admin/services", icon: Wrench },
+  { label: "Reseller Management", href: "/admin/resellers", icon: Store },
   { label: "Reviews Feed", href: "/admin/reviews", icon: MessageSquare },
   { label: "Customers Directory", href: "/admin/customers", icon: Users },
   { label: "Internship Applications", href: "/admin/internships", icon: GraduationCap },
@@ -57,6 +62,7 @@ const STATIC_NAV_ITEMS = [
   { label: "Admin Users", href: "/admin/users", icon: UserCheck },
   { label: "Branch Settings", href: "/admin/branches", icon: MapPin },
   { label: "Website CMS", href: "/admin/website-cms", icon: Globe },
+  { label: "AI Center", href: "/admin/ai", icon: Sparkles },
   { label: "Settings", href: "/admin/settings", icon: Settings },
 ];
 

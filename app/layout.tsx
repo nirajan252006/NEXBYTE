@@ -11,6 +11,7 @@ const spaceGrotesk = Space_Grotesk({
   variable: "--font-display",
   display: "swap",
   weight: ["500", "600", "700"],
+  preload: false,
 });
 
 const inter = Inter({
@@ -18,6 +19,7 @@ const inter = Inter({
   variable: "--font-body",
   display: "swap",
   weight: ["400", "500", "600", "700"],
+  preload: false,
 });
 
 const SITE_URL = "https://nexbytetechnologies.com";

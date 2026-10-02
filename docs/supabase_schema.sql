@@ -4,13 +4,25 @@
 -- Realtime Tables: Enabled via supabase_realtime publication
 -- ====================================================================
 
--- 1. USERS TABLE
+-- 1. PROFILES TABLE (Role-Based Access Control)
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT UNIQUE NOT NULL,
+  full_name TEXT NOT NULL,
+  phone TEXT,
+  role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'reseller', 'user')),
+  reseller_id TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2. USERS TABLE
 CREATE TABLE IF NOT EXISTS public.users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT UNIQUE NOT NULL,
   full_name TEXT NOT NULL,
   phone TEXT,
-  role TEXT DEFAULT 'customer' CHECK (role IN ('customer', 'admin', 'staff')),
+  role TEXT DEFAULT 'user' CHECK (role IN ('user', 'admin', 'reseller')),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

@@ -1,68 +1,130 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Redirect authenticated admins away from login page to dashboard
-  if (pathname === "/admin/login") {
-    const sessionCookie = request.cookies.get("nexbyte_admin_session")?.value;
-    if (sessionCookie) {
-      return NextResponse.redirect(new URL("/admin/dashboard", request.url));
+  const adminSession = request.cookies.get("nexbyte_admin_session")?.value;
+  const resellerSession = request.cookies.get("nexbyte_reseller_session")?.value;
+  const userSession = request.cookies.get("nexbyte_customer_session")?.value;
+
+  // ── ROOT "/" — Authentication Gateway ─────────────────────────────────────
+  if (pathname === "/") {
+    // Root URL MUST NOT automatically redirect to /admin, /reseller, or /login.
+    // Always allow the entrance gateway page to render.
+    return NextResponse.next();
+  }
+
+  // ── /login or /signup — redirect if already authenticated ─────────────────
+  if (pathname === "/login" || pathname === "/signup") {
+    const roleParam = request.nextUrl.searchParams.get("role");
+    if (roleParam === "admin" && adminSession) {
+      return NextResponse.redirect(new URL("/admin", request.url));
+    }
+    if (roleParam === "reseller" && resellerSession) {
+      return NextResponse.redirect(new URL("/reseller", request.url));
+    }
+    if (roleParam === "user" && userSession) {
+      return NextResponse.redirect(new URL("/customer", request.url));
+    }
+    if (!roleParam) {
+      if (adminSession) {
+        return NextResponse.redirect(new URL("/admin", request.url));
+      }
+      if (resellerSession) {
+        return NextResponse.redirect(new URL("/reseller", request.url));
+      }
+      if (userSession) {
+        return NextResponse.redirect(new URL("/customer", request.url));
+      }
     }
   }
 
-  // Protect all /admin routes except /admin/login
-  if (pathname.startsWith("/admin") && pathname !== "/admin/login") {
-    const sessionCookie = request.cookies.get("nexbyte_admin_session")?.value;
+  // ── /admin/login — redirect if authenticated ─────────────────────────────
+  if (pathname === "/admin/login") {
+    if (adminSession) {
+      return NextResponse.redirect(new URL("/admin", request.url));
+    }
+  }
 
-    if (!sessionCookie) {
-      return NextResponse.redirect(new URL("/admin/login", request.url));
+  // ── /admin/* — require admin session ──────────────────────────────────────
+  if (pathname.startsWith("/admin") && pathname !== "/admin/login") {
+    if (!adminSession) {
+      if (userSession) {
+        return NextResponse.redirect(new URL("/customer", request.url));
+      }
+      return NextResponse.redirect(new URL("/login?role=admin", request.url));
     }
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-
-    // Development fallback if Supabase is not configured yet
-    if (!supabaseUrl && sessionCookie === "mock-admin-session-token") {
+    // Development mock — accept hardcoded token without requiring Supabase
+    if (adminSession === "mock-admin-session-token") {
       return NextResponse.next();
     }
 
-    try {
-      const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
-      const { data: { user }, error } = await supabaseClient.auth.getUser(sessionCookie);
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 
-      if (error || !user || !user.email) {
-        // Clear invalid session cookie
-        const res = NextResponse.redirect(new URL("/admin/login", request.url));
+    if (supabaseUrl) {
+      try {
+        const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+        const { createClient } = await import("@supabase/supabase-js");
+        const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
+        const { data: { user }, error } = await supabaseClient.auth.getUser(adminSession);
+
+        if (error || !user?.email) {
+          const res = NextResponse.redirect(new URL("/login?role=admin", request.url));
+          res.cookies.delete("nexbyte_admin_session");
+          return res;
+        }
+
+        const allowedEmails = (process.env.ADMIN_EMAILS || "admin@nexbyte.com")
+          .split(",")
+          .map((email) => email.trim().toLowerCase());
+
+        if (!allowedEmails.includes(user.email.toLowerCase())) {
+          const res = NextResponse.redirect(new URL("/login?role=admin", request.url));
+          res.cookies.delete("nexbyte_admin_session");
+          return res;
+        }
+      } catch {
+        const res = NextResponse.redirect(new URL("/login?role=admin", request.url));
         res.cookies.delete("nexbyte_admin_session");
         return res;
       }
-
-      // Check email against allowlist
-      const allowedEmails = (process.env.ADMIN_EMAILS || "admin@nexbyte.com")
-        .split(",")
-        .map((email) => email.trim().toLowerCase());
-
-      if (!allowedEmails.includes(user.email.toLowerCase())) {
-        const res = NextResponse.redirect(new URL("/admin/login", request.url));
-        res.cookies.delete("nexbyte_admin_session");
-        return res;
-      }
-    } catch (e) {
-      const res = NextResponse.redirect(new URL("/admin/login", request.url));
+    } else if (adminSession !== "mock-admin-session-token") {
+      const res = NextResponse.redirect(new URL("/login?role=admin", request.url));
       res.cookies.delete("nexbyte_admin_session");
       return res;
     }
   }
 
-  // Protect all /customer routes except /customer/login
-  if (pathname.startsWith("/customer") && pathname !== "/customer/login") {
-    const sessionCookie = request.cookies.get("nexbyte_customer_session")?.value;
+  // ── /reseller/login ───────────────────────────────────────────────────────
+  if (pathname === "/reseller/login") {
+    if (resellerSession) {
+      return NextResponse.redirect(new URL("/reseller", request.url));
+    }
+  }
 
-    if (!sessionCookie) {
-      return NextResponse.redirect(new URL("/customer/login", request.url));
+  // ── /reseller/* — require reseller session ────────────────────────────────
+  if (pathname.startsWith("/reseller") && pathname !== "/reseller/login") {
+    if (!resellerSession) {
+      if (userSession) {
+        return NextResponse.redirect(new URL("/customer", request.url));
+      }
+      return NextResponse.redirect(new URL("/login?role=reseller", request.url));
+    }
+  }
+
+  // ── /customer/login ───────────────────────────────────────────────────────
+  if (pathname === "/customer/login") {
+    if (userSession) {
+      return NextResponse.redirect(new URL("/customer", request.url));
+    }
+  }
+
+  // ── /customer/* — require user session ────────────────────────────────────
+  if (pathname.startsWith("/customer") && pathname !== "/customer/login") {
+    if (!userSession) {
+      return NextResponse.redirect(new URL("/login", request.url));
     }
   }
 
@@ -70,5 +132,12 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/customer/:path*"],
+  matcher: [
+    "/",
+    "/login",
+    "/signup",
+    "/admin/:path*",
+    "/reseller/:path*",
+    "/customer/:path*",
+  ],
 };

@@ -32,6 +32,7 @@ export async function GET(req: Request) {
     // 1. Fetch lists
     const bookings = await dbHelper.bookings.list();
     const enrollments = await dbHelper.enrollments.list();
+    const laptopEnquiries = await dbHelper.laptopEnquiries.list();
 
     // 2. Filter matches
     const matchedBookings = bookings.filter(
@@ -48,12 +49,43 @@ export async function GET(req: Request) {
         (e.phone || "").replace(/\D/g, "").includes(cleanSearch.replace(/\D/g, ""))
     );
 
+    const matchedLaptopEnquiries = laptopEnquiries
+      .filter(
+        (l: any) =>
+          l.reference_id?.toLowerCase() === cleanSearch ||
+          l.id?.toLowerCase() === cleanSearch ||
+          (l.phone || "").replace(/\D/g, "").includes(cleanSearch.replace(/\D/g, ""))
+      )
+      .map((l: any) => {
+        // SECURITY AUDIT HARDENING: Strip internal admin_notes before returning to customer tracking
+        const { admin_notes, ...safeData } = l;
+        return safeData;
+      });
+
+    const internships = await dbHelper.internships.list();
+    const matchedInternships = internships
+      .filter(
+        (i: any) =>
+          i.application_id?.toLowerCase() === cleanSearch ||
+          i.enrollment_id?.toLowerCase() === cleanSearch ||
+          i.certificate_id?.toLowerCase() === cleanSearch ||
+          i.id?.toLowerCase() === cleanSearch ||
+          (i.phone || "").replace(/\D/g, "").includes(cleanSearch.replace(/\D/g, ""))
+      )
+      .map((i: any) => {
+        // SECURITY AUDIT HARDENING: Strip internal admin_notes before returning to customer tracking
+        const { admin_notes, ...safeData } = i;
+        return safeData;
+      });
+
     return NextResponse.json(
       {
         success: true,
         results: {
           bookings: matchedBookings,
           enrollments: matchedEnrollments,
+          laptopEnquiries: matchedLaptopEnquiries,
+          internships: matchedInternships,
         },
       },
       { status: 200, headers: JSON_HEADERS }

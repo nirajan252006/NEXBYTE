@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { dbHelper } from "./dbHelper";
 
 export interface Notification {
   id: string;
@@ -32,11 +31,25 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     }),
   fetchNotifications: async () => {
     try {
-      const list = await dbHelper.notifications.list();
-      set({
-        notifications: list,
-        unreadCount: list.filter((n: any) => n.status === "unread").length,
+      // Fetch from API (server-side source of truth) instead of client-side dbHelper
+      const res = await fetch("/api/notifications", {
+        headers: { "Accept": "application/json" },
       });
+      const text = await res.text();
+      let parsed: any;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        console.error("[NotificationStore] Non-JSON response from /api/notifications");
+        return;
+      }
+      if (res.ok && parsed.success && Array.isArray(parsed.notifications)) {
+        const list = parsed.notifications;
+        set({
+          notifications: list,
+          unreadCount: list.filter((n: any) => n.status === "unread").length,
+        });
+      }
     } catch (e) {
       console.error("Failed to fetch notifications:", e);
     }
@@ -54,7 +67,12 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   },
   markAllAsRead: async () => {
     try {
-      await dbHelper.notifications.markAllRead();
+      // Use API for server-side persistence
+      await fetch("/api/notifications", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "markAllRead" }),
+      });
       const updatedList = get().notifications.map((n) => ({
         ...n,
         status: "read" as const,
@@ -73,7 +91,12 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   },
   markAsRead: async (id) => {
     try {
-      await dbHelper.notifications.markRead(id);
+      // Use API for server-side persistence
+      await fetch("/api/notifications", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "markRead", id }),
+      });
       const updatedList = get().notifications.map((n) =>
         n.id === id ? { ...n, status: "read" as const } : n
       );

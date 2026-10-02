@@ -26,7 +26,7 @@ import {
   Send,
   Sparkles
 } from "lucide-react";
-import { dbHelper } from "@/lib/dbHelper";
+import { safeJsonFetch } from "@/lib/apiHelper";
 import { cn } from "@/lib/utils";
 
 // Status configuration for badges
@@ -98,8 +98,14 @@ export default function AdminBookingsConsole() {
   const [newlyAddedIds, setNewlyAddedIds] = useState<Set<string>>(new Set());
 
   const loadBookings = async () => {
-    const list = await dbHelper.bookings.list();
-    setBookings(list);
+    try {
+      const res = await safeJsonFetch('/api/bookings');
+      if (res.ok && res.data?.success && Array.isArray(res.data.bookings)) {
+        setBookings(res.data.bookings);
+      }
+    } catch (e) {
+      console.error('[ADMIN BOOKINGS FETCH ERROR]', e);
+    }
   };
 
   useEffect(() => {
@@ -126,13 +132,17 @@ export default function AdminBookingsConsole() {
   }, []);
 
   const handleUpdateStatus = async (id: string, newStatus: string) => {
-    await dbHelper.bookings.update(id, { status: newStatus });
-    loadBookings();
-    // Update local modal details if open
-    if (selectedBooking && selectedBooking.id === id) {
-      const updated = await dbHelper.bookings.list();
-      setSelectedBooking(updated.find(b => b.id === id));
+    const res = await safeJsonFetch('/api/bookings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, status: newStatus }),
+    });
+    if (res.ok && res.data?.booking) {
+      if (selectedBooking && selectedBooking.id === id) {
+        setSelectedBooking(res.data.booking);
+      }
     }
+    loadBookings();
   };
 
   const handleOpenEdit = (booking: any, e: React.MouseEvent) => {
@@ -149,12 +159,16 @@ export default function AdminBookingsConsole() {
     e.preventDefault();
     if (!selectedBooking) return;
 
-    await dbHelper.bookings.update(selectedBooking.id, {
-      booking_date: editDate,
-      booking_time: editTime,
-      notes: editNotes,
-      assignedTo: editTechnician,
-      technician: editTechnician // backward compatibility
+    await safeJsonFetch('/api/bookings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: selectedBooking.id,
+        booking_date: editDate,
+        booking_time: editTime,
+        notes: editNotes,
+        assignedTo: editTechnician,
+      }),
     });
 
     setIsEditModalOpen(false);
@@ -165,7 +179,7 @@ export default function AdminBookingsConsole() {
   const handleDelete = async (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (confirm("Are you sure you want to permanently delete this booking record?")) {
-      await dbHelper.bookings.delete(id);
+      await safeJsonFetch(`/api/bookings?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
       setIsDetailModalOpen(false);
       setSelectedBooking(null);
       loadBookings();
@@ -175,7 +189,11 @@ export default function AdminBookingsConsole() {
   const handleArchive = async (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (confirm("Archive this booking record?")) {
-      await dbHelper.bookings.update(id, { status: "cancelled" });
+      await safeJsonFetch('/api/bookings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, status: 'cancelled' }),
+      });
       loadBookings();
     }
   };
@@ -184,32 +202,29 @@ export default function AdminBookingsConsole() {
     if (!selectedBooking || !replyText.trim()) return;
 
     const now = new Date().toISOString();
-    const chatItem = {
-      type: "chat",
-      sender: "admin",
-      message: replyText.trim(),
-      timestamp: now
-    };
-
     const newStatus = selectedBooking.status === "new" ? "quoted" : selectedBooking.status;
-    const updatedTimeline = [...(selectedBooking.timeline || []), chatItem];
 
-    const updated = await dbHelper.bookings.update(selectedBooking.id, {
-      replyMessage: replyText.trim(),
-      replyDate: now,
-      replyBy: "NexByte Admin",
-      status: newStatus,
-      timeline: updatedTimeline
+    const res = await safeJsonFetch('/api/bookings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: selectedBooking.id,
+        chatMessage: replyText.trim(),
+        sender: 'admin',
+        replyMessage: replyText.trim(),
+        replyDate: now,
+        replyBy: 'NexByte Admin',
+        status: newStatus,
+      }),
     });
 
-    setSelectedBooking(updated);
+    if (res.ok && res.data?.booking) {
+      setSelectedBooking(res.data.booking);
+    }
     setReplyText("");
     setReplySaved(true);
     setTimeout(() => setReplySaved(false), 2500);
     loadBookings();
-
-    // Trigger sync
-    window.dispatchEvent(new CustomEvent("nexbyte-realtime"));
   };
 
   // CSV Export utility

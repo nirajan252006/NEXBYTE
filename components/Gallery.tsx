@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { X, ZoomIn } from "lucide-react";
 import { galleryImages } from "@/lib/data";
 import SectionHeading from "@/components/ui/SectionHeading";
+import { getSafeImageSrc } from "@/lib/utils";
 
 export default function Gallery() {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
@@ -32,8 +33,8 @@ export default function Gallery() {
               className="group relative aspect-square overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.03]"
             >
               <Image
-                src={img.src}
-                alt={img.alt}
+                src={getSafeImageSrc(img.src)}
+                alt={img.alt || "Gallery Image"}
                 fill
                 sizes="(max-width: 640px) 50vw, 25vw"
                 className="object-contain p-3 transition-transform duration-500 group-hover:scale-110"
@@ -72,8 +73,8 @@ export default function Gallery() {
               onClick={(e) => e.stopPropagation()}
             >
               <Image
-                src={galleryImages[activeIndex].src}
-                alt={galleryImages[activeIndex].alt}
+                src={getSafeImageSrc(galleryImages[activeIndex]?.src)}
+                alt={galleryImages[activeIndex]?.alt || "Gallery Image"}
                 fill
                 sizes="100vw"
                 className="object-contain"

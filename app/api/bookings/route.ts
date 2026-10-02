@@ -27,7 +27,7 @@ export async function POST(req: Request) {
       );
     }
 
-    console.log("API Called", "/api/bookings", body);
+    console.log("[BOOKING API RECEIVED]", "/api/bookings POST", body);
 
     // 1. Validate required fields (Task 3 & 4: Customer Name, Phone, Request Type)
     const customerName = body.customerName || body.customer_name || body.name;
@@ -64,13 +64,15 @@ export async function POST(req: Request) {
       remarks: body.description || body.remarks || body.message || "",
       description: body.description || body.remarks || body.message || "",
       budget: body.budget || "Standard",
-      status: "submitted",
+      status: "new",
       productId: body.selectedItem || body.productId || "",
       message: body.description || body.remarks || body.message || "",
     };
 
     // 3. Save to database using dbHelper (Generates Booking ID, Customer ID, Notification, Activity Log, Timeline)
+    console.log("[BOOKING DB INSERT]", newBooking);
     const saved = await dbHelper.bookings.create(newBooking);
+    console.log("[BOOKING DB INSERT SUCCESS]", saved.bookingId);
 
     return NextResponse.json(
       {
@@ -79,10 +81,10 @@ export async function POST(req: Request) {
         booking: saved,
         message: "Booking Submitted Successfully",
       },
-      { status: 200, headers: JSON_HEADERS }
+      { status: 201, headers: JSON_HEADERS }
     );
   } catch (error: any) {
-    console.error("Booking API Error:", error);
+    console.error("[BOOKING DB ERROR]", error);
     return NextResponse.json(
       {
         success: false,
@@ -100,7 +102,22 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const phone = searchParams.get("phone");
     const bookingId = searchParams.get("bookingId");
+    const id = searchParams.get("id");
 
+    // Single booking lookup by internal id
+    if (id) {
+      const list = await dbHelper.bookings.list();
+      const match = list.find((b: any) => b.id === id || b.bookingId === id);
+      if (match) {
+        return NextResponse.json({ success: true, booking: match }, { status: 200, headers: JSON_HEADERS });
+      }
+      return NextResponse.json(
+        { success: false, message: "Booking not found.", error: "Booking not found.", code: "NOT_FOUND" },
+        { status: 404, headers: JSON_HEADERS }
+      );
+    }
+
+    // Customer tracking lookup by phone + bookingId
     if (phone && bookingId) {
       const match = await dbHelper.bookings.getByPhoneAndId(phone, bookingId);
       if (match) {
@@ -113,6 +130,8 @@ export async function GET(req: Request) {
       }
     }
 
+    // List all bookings (admin fetch)
+    console.log("[ADMIN BOOKINGS FETCH]");
     const allBookings = await dbHelper.bookings.list();
     return NextResponse.json({ success: true, bookings: allBookings }, { status: 200, headers: JSON_HEADERS });
   } catch (error: any) {
@@ -135,39 +154,96 @@ export async function PUT(req: Request) {
       );
     }
 
-    const { id, chatMessage } = body;
+    const { id } = body;
 
-    if (!id || !chatMessage) {
+    if (!id) {
       return NextResponse.json(
-        { success: false, message: "Missing required parameters (id, chatMessage).", error: "Missing parameters.", code: "VALIDATION_ERROR" },
+        { success: false, message: "Missing required parameter: id.", error: "Missing id.", code: "VALIDATION_ERROR" },
         { status: 400, headers: JSON_HEADERS }
       );
     }
 
-    const list = await dbHelper.bookings.list();
-    const existing = list.find((b: any) => b.id === id);
-    if (!existing) {
+    // If chatMessage is present, this is a customer chat message
+    if (body.chatMessage) {
+      const list = await dbHelper.bookings.list();
+      const existing = list.find((b: any) => b.id === id);
+      if (!existing) {
+        return NextResponse.json(
+          { success: false, message: "Booking not found.", error: "Booking not found.", code: "NOT_FOUND" },
+          { status: 404, headers: JSON_HEADERS }
+        );
+      }
+
+      const now = new Date().toISOString();
+      const chatItem = {
+        type: "chat",
+        sender: body.sender || "customer",
+        message: body.chatMessage.trim(),
+        timestamp: now
+      };
+
+      const updatedTimeline = [...(existing.timeline || []), chatItem];
+      const updated = await dbHelper.bookings.update(existing.id, {
+        timeline: updatedTimeline,
+        ...(body.replyMessage ? { replyMessage: body.replyMessage } : {}),
+        ...(body.replyDate ? { replyDate: body.replyDate } : {}),
+        ...(body.replyBy ? { replyBy: body.replyBy } : {}),
+        ...(body.status ? { status: body.status } : {}),
+      });
+
+      return NextResponse.json({ success: true, booking: updated }, { status: 200, headers: JSON_HEADERS });
+    }
+
+    // Otherwise, this is a general admin update (status, technician, notes, etc.)
+    const updates: any = {};
+    if (body.status !== undefined) updates.status = body.status;
+    if (body.assignedTo !== undefined) { updates.assignedTo = body.assignedTo; updates.technician = body.assignedTo; }
+    if (body.technician !== undefined) { updates.technician = body.technician; updates.assignedTo = body.technician; }
+    if (body.notes !== undefined) updates.notes = body.notes;
+    if (body.booking_date !== undefined) updates.booking_date = body.booking_date;
+    if (body.booking_time !== undefined) updates.booking_time = body.booking_time;
+    if (body.replyMessage !== undefined) updates.replyMessage = body.replyMessage;
+    if (body.replyDate !== undefined) updates.replyDate = body.replyDate;
+    if (body.replyBy !== undefined) updates.replyBy = body.replyBy;
+    if (body.timeline !== undefined) updates.timeline = body.timeline;
+    if (body.updatedBy !== undefined) updates.updatedBy = body.updatedBy;
+
+    if (Object.keys(updates).length === 0) {
       return NextResponse.json(
-        { success: false, message: "Booking not found.", error: "Booking not found.", code: "NOT_FOUND" },
-        { status: 404, headers: JSON_HEADERS }
+        { success: false, message: "No update fields provided.", error: "No updates.", code: "VALIDATION_ERROR" },
+        { status: 400, headers: JSON_HEADERS }
       );
     }
 
-    const now = new Date().toISOString();
-    const chatItem = {
-      type: "chat",
-      sender: "customer",
-      message: chatMessage.trim(),
-      timestamp: now
-    };
-
-    const updatedTimeline = [...(existing.timeline || []), chatItem];
-    const updated = await dbHelper.bookings.update(existing.id, {
-      timeline: updatedTimeline
-    });
+    const updated = await dbHelper.bookings.update(id, updates);
 
     return NextResponse.json({ success: true, booking: updated }, { status: 200, headers: JSON_HEADERS });
   } catch (error: any) {
+    console.error("[BOOKING UPDATE ERROR]", error);
+    return NextResponse.json(
+      { success: false, message: error.message || "Internal Error", error: error.message, code: "SERVER_ERROR" },
+      { status: 500, headers: JSON_HEADERS }
+    );
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json(
+        { success: false, message: "Missing required parameter: id.", error: "Missing id.", code: "VALIDATION_ERROR" },
+        { status: 400, headers: JSON_HEADERS }
+      );
+    }
+
+    await dbHelper.bookings.delete(id);
+
+    return NextResponse.json({ success: true, message: "Booking deleted successfully." }, { status: 200, headers: JSON_HEADERS });
+  } catch (error: any) {
+    console.error("[BOOKING DELETE ERROR]", error);
     return NextResponse.json(
       { success: false, message: error.message || "Internal Error", error: error.message, code: "SERVER_ERROR" },
       { status: 500, headers: JSON_HEADERS }

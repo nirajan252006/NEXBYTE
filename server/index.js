@@ -188,7 +188,7 @@ app.post(["/api/bookings", "/api/book-product", "/api/product-booking", "/api/en
       bookingType: body.requestType || "product",
       quantity: Number(body.quantity || 1),
       budget: body.budget || "N/A",
-      status: "submitted",
+      status: "new",
       createdAt: now,
       updatedAt: now,
       timeline: [{ status: "submitted", timestamp: now, message: "Booking submitted by customer", by: "Customer" }],

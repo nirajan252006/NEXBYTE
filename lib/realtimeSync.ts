@@ -34,6 +34,8 @@ class RealtimeSyncManager {
   private listeners: Map<string, Set<RealtimeCallback>> = new Map();
   private pollInterval: NodeJS.Timeout | null = null;
   private initialized = false;
+  private eventSource: EventSource | null = null;
+  private sseReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   init() {
     if (this.initialized) return;
@@ -44,14 +46,14 @@ class RealtimeSyncManager {
 
     if (url && key) {
       this.supabase = createClient(url, key);
-      // We will still subscribe to Supabase Realtime as a backup, 
-      // but primarily rely on our own robust SSE pipeline below.
+      // Subscribe to Supabase Realtime as primary when configured
       this.subscribeToTables();
     }
     
-    // ALWAYS start our custom SSE pipeline to guarantee events 
+    // ALWAYS start our custom pipelines to guarantee events 
     // are broadcasted from local dbHelper mutations and API routes.
     this.startPolling();
+    this.connectSSE();
   }
 
   private subscribeToTables() {
@@ -88,10 +90,54 @@ class RealtimeSyncManager {
     });
   }
 
+  /**
+   * Connect to the server's SSE stream to receive server-side events.
+   * This is the critical link between server-side mutations (e.g., customer booking
+   * created via API route) and client-side admin components.
+   */
+  private connectSSE() {
+    if (typeof window === "undefined") return;
+
+    try {
+      this.eventSource = new EventSource("/api/realtime-stream");
+
+      this.eventSource.onmessage = (e) => {
+        try {
+          const eventData = JSON.parse(e.data);
+          if (eventData && eventData.table) {
+            console.log("[SSE] Server event received:", eventData.table, eventData.eventType);
+            const event: RealtimeEvent = {
+              table: eventData.table,
+              eventType: eventData.eventType || "INSERT",
+              new: eventData.new || {},
+              old: eventData.old || {},
+            };
+            this.emit(eventData.table, event);
+            this.emit("*", event);
+            window.dispatchEvent(new CustomEvent("nexbyte-realtime", { detail: event }));
+          }
+        } catch {
+          // Ignore parse errors (heartbeats, etc.)
+        }
+      };
+
+      this.eventSource.onerror = () => {
+        console.warn("[SSE] Connection lost. Reconnecting in 3s...");
+        this.eventSource?.close();
+        this.eventSource = null;
+        // Reconnect after delay
+        if (this.sseReconnectTimer) clearTimeout(this.sseReconnectTimer);
+        this.sseReconnectTimer = setTimeout(() => this.connectSSE(), 3000);
+      };
+    } catch (e) {
+      console.error("[SSE] Failed to connect:", e);
+    }
+  }
+
   private startPolling() {
     if (typeof window === "undefined") return;
 
-    // Setup BroadcastChannel for cross-tab communication (replaces SSE to prevent dev server hangs)
+    // Setup BroadcastChannel for cross-tab communication within the same browser
     const bc = new BroadcastChannel("nexbyte-sync-channel");
     
     // When this tab receives a local data change from dbHelper, broadcast it to other tabs!
@@ -151,6 +197,11 @@ class RealtimeSyncManager {
     this.channels.forEach((ch) => ch.unsubscribe());
     this.channels = [];
     if (this.pollInterval) clearInterval(this.pollInterval);
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
+    }
+    if (this.sseReconnectTimer) clearTimeout(this.sseReconnectTimer);
     this.initialized = false;
   }
 }

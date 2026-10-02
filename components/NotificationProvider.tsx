@@ -1,7 +1,8 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState, useRef } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Bell, 
@@ -24,6 +25,7 @@ interface Toast {
   title: string;
   message: string;
   type: string;
+  audience?: "admin" | "customer";
 }
 
 const TYPE_CONFIG: Record<string, { icon: React.ReactNode; color: string; bgColor: string }> = {
@@ -83,8 +85,14 @@ const NotificationContext = createContext<any>(null);
 
 export default function NotificationProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const pathname = usePathname();
+  const isAdminRoute = pathname?.startsWith("/admin");
+
   const fetchNotifications = useNotificationStore((s) => s.fetchNotifications);
   const addNotification = useNotificationStore((s) => s.addNotification);
+
+  // Set to track deduplicated events (prevents multiple toasts from SSE + BroadcastChannel + CustomEvent)
+  const processedEventKeys = useRef(new Set<string>());
 
   const playNotificationSound = () => {
     try {
@@ -120,9 +128,14 @@ export default function NotificationProvider({ children }: { children: React.Rea
     }
   };
 
-  const showToast = (title: string, message: string, type: string) => {
+  const showToast = (title: string, message: string, type: string, audience: "admin" | "customer" = "admin") => {
+    // CRITICAL AUDIENCE CHECK: Admin notifications MUST NEVER be rendered on customer pages
+    if (audience === "admin" && !isAdminRoute) {
+      return;
+    }
+
     const id = Math.random().toString(36).substring(2, 9);
-    setToasts((prev) => [...prev, { id, title, message, type }]);
+    setToasts((prev) => [...prev, { id, title, message, type, audience }]);
     
     // Auto remove after 5 seconds
     setTimeout(() => {
@@ -131,24 +144,56 @@ export default function NotificationProvider({ children }: { children: React.Rea
   };
 
   useEffect(() => {
-    // Initial fetch of unread/recent list
-    fetchNotifications();
+    // Only fetch/sync notifications store if on admin route
+    if (isAdminRoute) {
+      fetchNotifications();
+    }
 
     // Init realtime sync singleton
     realtimeSync.init();
 
     const handleRealtimeEvent = (e: any) => {
       const { table, eventType, new: newRecord } = e.detail || {};
+
+      // 1. FILTER RAW SYSTEM TABLES: Never show generic table updates to anyone
+      if (!table || table === "activity_logs" || table === "customers") {
+        return;
+      }
+
+      // 2. DEDUPLICATION: Check if this event was already handled in the last 10s
+      const recordId = newRecord?.id || newRecord?.bookingId || newRecord?.created_at || Math.random();
+      const dedupeKey = `${table}-${eventType}-${recordId}`;
+      if (processedEventKeys.current.has(dedupeKey)) {
+        return;
+      }
+      processedEventKeys.current.add(dedupeKey);
+      setTimeout(() => {
+        processedEventKeys.current.delete(dedupeKey);
+      }, 10000);
+
+      // 3. AUDIENCE ROUTING: If event is for notifications table, add to store
+      if (table === "notifications") {
+        if (isAdminRoute) {
+          addNotification(newRecord);
+          fetchNotifications();
+        }
+        return;
+      }
       
+      // 4. ADMIN OPERATIONAL NOTIFICATIONS: Only process if on Admin route
       if (eventType === "INSERT") {
-        let title = "New Update Received";
-        let message = `A new entry was added to ${table}.`;
+        // If customer is on a non-admin page, DO NOT show admin operational toasts or play chime
+        if (!isAdminRoute) {
+          return;
+        }
+
+        let title = "";
+        let message = "";
         let toastType = "default";
 
-        // Map tables to specific messaging
         if (table === "bookings") {
           title = "New Booking Received 📅";
-          message = `${newRecord.customerName || newRecord.customer_name || "A customer"} booked ${newRecord.productName || newRecord.service_name || "a request"}`;
+          message = `${newRecord.customerName || newRecord.customer_name || "A customer"} booked ${newRecord.productName || newRecord.service_name || "a request"} (${newRecord.bookingId || ""})`;
           toastType = "booking";
         } else if (table === "contacts") {
           title = "New Contact Enquiry ✉️";
@@ -172,27 +217,25 @@ export default function NotificationProvider({ children }: { children: React.Rea
           toastType = "training";
         } else if (table === "products") {
           title = "Catalog Updated 🛍️";
-          message = `Product "${newRecord.name}" has been added.`;
+          message = `Product "${newRecord.title || newRecord.name}" has been added.`;
           toastType = "product";
         } else if (table === "services") {
           title = "Service Offered 🔧";
-          message = `Service "${newRecord.name}" has been added.`;
+          message = `Service "${newRecord.title || newRecord.name}" has been added.`;
           toastType = "service";
         } else if (table === "users") {
           title = "New Customer Registered 👥";
           message = `${newRecord.full_name || newRecord.email} created an account.`;
           toastType = "customer";
-        } else if (table === "notifications") {
-          // If the notification table itself got an insert, we add it to our store
-          addNotification(newRecord);
-          // Return so we don't duplicate notifications
+        } else {
+          // Unknown table insert - ignore
           return;
         }
 
-        // Show toast notification
-        showToast(title, message, toastType);
+        // Show toast notification for Admin
+        showToast(title, message, toastType, "admin");
         
-        // Play audio chime
+        // Play audio chime for Admin
         playNotificationSound();
 
         // Refresh Zustand store list and count
@@ -209,72 +252,74 @@ export default function NotificationProvider({ children }: { children: React.Rea
         window.removeEventListener("nexbyte-realtime", handleRealtimeEvent);
       }
     };
-  }, [fetchNotifications, addNotification]);
+  }, [fetchNotifications, addNotification, isAdminRoute]);
 
   return (
     <NotificationContext.Provider value={{ showToast, playNotificationSound }}>
       {children}
 
-      {/* Floating Glassmorphic Toast Notification Container */}
-      <div className="fixed bottom-6 right-6 z-[99999] flex flex-col gap-3 w-full max-w-sm pointer-events-none">
-        <AnimatePresence>
-          {toasts.map((toast) => {
-            const cfg = TYPE_CONFIG[toast.type] || TYPE_CONFIG.default;
-            return (
-              <motion.div
-                key={toast.id}
-                initial={{ opacity: 0, y: 50, scale: 0.9 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.2 } }}
-                className={`pointer-events-auto flex items-start gap-3 p-4 rounded-2xl glass-panel bg-nex-ink/95 border border-white/10 shadow-glow-blue max-w-full`}
-              >
-                <div className={`h-9 w-9 rounded-xl flex items-center justify-center shrink-0 border ${cfg.color} ${cfg.bgColor}`}>
-                  {cfg.icon}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="font-semibold text-white text-xs">{toast.title}</h4>
-                  <p className="text-[11px] text-nex-mist mt-0.5 leading-relaxed">{toast.message}</p>
-                  {toast.type === "booking" && (
-                    <div className="mt-2 flex items-center gap-2">
-                      <Link
-                        href="/admin/bookings"
-                        onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
-                        className="inline-flex items-center gap-1 rounded-lg bg-nex-blue px-2.5 py-1 text-[10px] font-bold text-white shadow-sm hover:bg-nex-blueLight transition-colors"
-                      >
-                        Open Booking
-                      </Link>
-                      <Link
-                        href="/admin/bookings"
-                        onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
-                        className="inline-flex items-center gap-1 rounded-lg bg-white/10 px-2.5 py-1 text-[10px] font-bold text-white hover:bg-white/20 transition-colors"
-                      >
-                        Assign
-                      </Link>
-                    </div>
-                  )}
-                  {toast.type === "review" && (
-                    <div className="mt-2 flex items-center gap-2">
-                      <Link
-                        href="/admin/reviews"
-                        onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
-                        className="inline-flex items-center gap-1 rounded-lg bg-nex-blue px-2.5 py-1 text-[10px] font-bold text-white shadow-sm hover:bg-nex-blueLight transition-colors"
-                      >
-                        Review Now
-                      </Link>
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
-                  className="text-white/40 hover:text-white shrink-0 self-start transition-colors p-0.5 rounded-lg hover:bg-white/5"
+      {/* Floating Glassmorphic Toast Notification Container — RENDERS ONLY ON ADMIN ROUTES */}
+      {isAdminRoute && (
+        <div className="fixed bottom-6 right-6 z-[99999] flex flex-col gap-3 w-full max-w-sm pointer-events-none">
+          <AnimatePresence>
+            {toasts.map((toast) => {
+              const cfg = TYPE_CONFIG[toast.type] || TYPE_CONFIG.default;
+              return (
+                <motion.div
+                  key={toast.id}
+                  initial={{ opacity: 0, y: 50, scale: 0.9 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.2 } }}
+                  className={`pointer-events-auto flex items-start gap-3 p-4 rounded-2xl glass-panel bg-nex-ink/95 border border-white/10 shadow-glow-blue max-w-full`}
                 >
-                  <X className="h-4 w-4" />
-                </button>
-              </motion.div>
-            );
-          })}
-        </AnimatePresence>
-      </div>
+                  <div className={`h-9 w-9 rounded-xl flex items-center justify-center shrink-0 border ${cfg.color} ${cfg.bgColor}`}>
+                    {cfg.icon}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-semibold text-white text-xs">{toast.title}</h4>
+                    <p className="text-[11px] text-nex-mist mt-0.5 leading-relaxed">{toast.message}</p>
+                    {toast.type === "booking" && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <Link
+                          href="/admin/bookings"
+                          onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+                          className="inline-flex items-center gap-1 rounded-lg bg-nex-blue px-2.5 py-1 text-[10px] font-bold text-white shadow-sm hover:bg-nex-blueLight transition-colors"
+                        >
+                          Open Booking
+                        </Link>
+                        <Link
+                          href="/admin/bookings"
+                          onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+                          className="inline-flex items-center gap-1 rounded-lg bg-white/10 px-2.5 py-1 text-[10px] font-bold text-white hover:bg-white/20 transition-colors"
+                        >
+                          Assign
+                        </Link>
+                      </div>
+                    )}
+                    {toast.type === "review" && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <Link
+                          href="/admin/reviews"
+                          onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+                          className="inline-flex items-center gap-1 rounded-lg bg-nex-blue px-2.5 py-1 text-[10px] font-bold text-white shadow-sm hover:bg-nex-blueLight transition-colors"
+                        >
+                          Review Now
+                        </Link>
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+                    className="text-white/40 hover:text-white shrink-0 self-start transition-colors p-0.5 rounded-lg hover:bg-white/5"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        </div>
+      )}
     </NotificationContext.Provider>
   );
 }
