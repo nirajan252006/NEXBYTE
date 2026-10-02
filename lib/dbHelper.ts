@@ -270,6 +270,68 @@ if (!globalRef.__nexbyteMockDb) {
     inventory: [],
     activity_logs: [],
     certificate_sequences: {},
+    offers: [
+      {
+        id: "off-1",
+        offerName: "Welcome Referral Offer",
+        offerCode: "NEX10",
+        description: "Get 10% off on your order up to ₹2,000.",
+        discountType: "percentage",
+        discountValue: 10,
+        eligibleProducts: ["all"],
+        minimumPurchase: 1000,
+        maximumDiscount: 2000,
+        startDate: "2026-01-01",
+        expiryDate: "2026-12-31",
+        usageLimit: 100,
+        perCustomerLimit: 1,
+        usageCount: 12,
+        status: "ACTIVE",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        usedBy: ["customer@nexbyte.com"]
+      },
+      {
+        id: "off-2",
+        offerName: "Festive SSD Upgrade Special",
+        offerCode: "SSD500",
+        description: "Flat ₹500 discount on high speed NVMe & SATA SSD storage drives.",
+        discountType: "fixed",
+        discountValue: 500,
+        eligibleProducts: ["p1", "p2", "p3"],
+        minimumPurchase: 3000,
+        maximumDiscount: 500,
+        startDate: "2026-06-01",
+        expiryDate: "2026-11-30",
+        usageLimit: 50,
+        perCustomerLimit: 2,
+        usageCount: 5,
+        status: "ACTIVE",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        usedBy: []
+      },
+      {
+        id: "off-3",
+        offerName: "Mega Electronics Clearance",
+        offerCode: "MEGA20",
+        description: "20% off on select refurbished items.",
+        discountType: "percentage",
+        discountValue: 20,
+        eligibleProducts: ["all"],
+        minimumPurchase: 5000,
+        maximumDiscount: 3000,
+        startDate: "2026-01-01",
+        expiryDate: "2026-03-31",
+        usageLimit: 20,
+        perCustomerLimit: 1,
+        usageCount: 20,
+        status: "INACTIVE",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        usedBy: []
+      }
+    ],
     invoices: [
       {
         id: "inv-1",
@@ -2572,6 +2634,272 @@ export const dbHelper = {
 
     async cancel(id: string) {
       return this.update(id, { status: "cancelled" });
+    }
+  },
+
+  // --- OFFERS SECTION ---
+  offers: {
+    async list() {
+      if (supabase) {
+        const { data } = await supabase.from("offers").select("*").order("created_at", { ascending: false });
+        if (data && data.length > 0) return data;
+      }
+      const list = getMockData("offers");
+      return (list || []).sort((a: any, b: any) => new Date(b.createdAt || b.created_at).getTime() - new Date(a.createdAt || a.created_at).getTime());
+    },
+
+    async getById(id: string) {
+      if (supabase) {
+        const { data } = await supabase.from("offers").select("*").or(`id.eq.${id},offer_code.eq.${id}`).single();
+        if (data) return data;
+      }
+      const list = getMockData("offers");
+      return list.find((o: any) => o.id === id || (o.offerCode || o.offer_code || "").toUpperCase() === id.toUpperCase()) || null;
+    },
+
+    async getByCode(code: string) {
+      const cleanCode = (code || "").trim().toUpperCase();
+      if (!cleanCode) return null;
+      if (supabase) {
+        const { data } = await supabase.from("offers").select("*").eq("offer_code", cleanCode).single();
+        if (data) return data;
+      }
+      const list = getMockData("offers");
+      return list.find((o: any) => (o.offerCode || o.offer_code || "").toUpperCase() === cleanCode) || null;
+    },
+
+    async create(offerData: any) {
+      const cleanCode = (offerData.offerCode || offerData.offer_code || "").trim().toUpperCase();
+      
+      const existing = await this.getByCode(cleanCode);
+      if (existing) {
+        throw new Error(`Offer Code "${cleanCode}" already exists.`);
+      }
+
+      const now = new Date().toISOString();
+      const payload = {
+        id: `off-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        offerName: (offerData.offerName || offerData.offer_name || "").trim(),
+        offerCode: cleanCode,
+        offer_code: cleanCode,
+        description: (offerData.description || "").trim(),
+        discountType: offerData.discountType || "percentage",
+        discount_type: offerData.discountType || "percentage",
+        discountValue: Number(offerData.discountValue ?? offerData.discount_value) || 0,
+        discount_value: Number(offerData.discountValue ?? offerData.discount_value) || 0,
+        eligibleProducts: Array.isArray(offerData.eligibleProducts) ? offerData.eligibleProducts : ["all"],
+        eligible_products: Array.isArray(offerData.eligibleProducts) ? offerData.eligibleProducts : ["all"],
+        minimumPurchase: Number(offerData.minimumPurchase ?? offerData.minimum_purchase) || 0,
+        minimum_purchase: Number(offerData.minimumPurchase ?? offerData.minimum_purchase) || 0,
+        maximumDiscount: Number(offerData.maximumDiscount ?? offerData.maximum_discount) || 0,
+        maximum_discount: Number(offerData.maximumDiscount ?? offerData.maximum_discount) || 0,
+        startDate: offerData.startDate || offerData.start_date || now.split("T")[0],
+        start_date: offerData.startDate || offerData.start_date || now.split("T")[0],
+        expiryDate: offerData.expiryDate || offerData.expiry_date || "2026-12-31",
+        expiry_date: offerData.expiryDate || offerData.expiry_date || "2026-12-31",
+        usageLimit: Number(offerData.usageLimit ?? offerData.usage_limit) || 100,
+        usage_limit: Number(offerData.usageLimit ?? offerData.usage_limit) || 100,
+        perCustomerLimit: Number(offerData.perCustomerLimit ?? offerData.per_customer_limit) || 1,
+        per_customer_limit: Number(offerData.perCustomerLimit ?? offerData.per_customer_limit) || 1,
+        usageCount: 0,
+        usage_count: 0,
+        status: offerData.status || "ACTIVE",
+        createdAt: now,
+        created_at: now,
+        updatedAt: now,
+        updated_at: now,
+        usedBy: [],
+        used_by: []
+      };
+
+      if (supabase) {
+        const { data, error } = await supabase.from("offers").insert([payload]).select().single();
+        if (data && !error) {
+          notifyDataChange("offers", "insert", data);
+          return data;
+        }
+      }
+
+      const list = getMockData("offers");
+      const updated = [payload, ...list];
+      saveMockData("offers", updated);
+      notifyDataChange("offers", "insert", payload);
+      return payload;
+    },
+
+    async update(id: string, updates: any) {
+      const existing = await this.getById(id);
+      if (!existing) throw new Error("Offer not found.");
+
+      const usage = Number(existing.usageCount ?? existing.usage_count) || 0;
+      
+      let cleanCode = existing.offerCode || existing.offer_code;
+      if (updates.offerCode || updates.offer_code) {
+        const newCode = (updates.offerCode || updates.offer_code).trim().toUpperCase();
+        if (newCode !== cleanCode) {
+          if (usage > 0) {
+            throw new Error("Offer Code cannot be modified after it has been redeemed.");
+          }
+          cleanCode = newCode;
+        }
+      }
+
+      const payload = {
+        ...updates,
+        offerCode: cleanCode,
+        offer_code: cleanCode,
+        updatedAt: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      if (supabase) {
+        const { data } = await supabase.from("offers").update(payload).eq("id", existing.id).select().single();
+        if (data) {
+          notifyDataChange("offers", "update", data);
+          return data;
+        }
+      }
+
+      const list = getMockData("offers");
+      const updated = list.map((o: any) => (o.id === existing.id ? { ...o, ...payload } : o));
+      saveMockData("offers", updated);
+      notifyDataChange("offers", "update", updated.find((o: any) => o.id === existing.id));
+      return updated.find((o: any) => o.id === existing.id);
+    },
+
+    async toggleStatus(id: string) {
+      const existing = await this.getById(id);
+      if (!existing) throw new Error("Offer not found.");
+      const currentStatus = existing.status || "ACTIVE";
+      const newStatus = currentStatus === "ACTIVE" ? "INACTIVE" : "ACTIVE";
+      return this.update(id, { status: newStatus });
+    },
+
+    async deleteOrArchive(id: string) {
+      const existing = await this.getById(id);
+      if (!existing) throw new Error("Offer not found.");
+
+      const usage = Number(existing.usageCount ?? existing.usage_count) || 0;
+      
+      if (usage > 0) {
+        return this.update(id, { status: "INACTIVE", archived: true });
+      }
+
+      if (supabase) {
+        await supabase.from("offers").delete().eq("id", existing.id);
+      }
+      const list = getMockData("offers");
+      const updated = list.filter((o: any) => o.id !== existing.id);
+      saveMockData("offers", updated);
+      notifyDataChange("offers", "delete", { id: existing.id });
+      return { deleted: true, archived: false };
+    },
+
+    async validateForCustomer(code: string, cartItems: any[], customerEmail?: string, subtotalAmount?: number) {
+      const cleanCode = (code || "").trim().toUpperCase();
+      if (!cleanCode) {
+        return { valid: false, message: "Offer code is required." };
+      }
+
+      const offer = await this.getByCode(cleanCode);
+      if (!offer) {
+        return { valid: false, message: "Invalid or expired referral code." };
+      }
+
+      if ((offer.status || "").toUpperCase() !== "ACTIVE") {
+        return { valid: false, message: "Invalid or expired referral code." };
+      }
+
+      const todayStr = new Date().toISOString().split("T")[0];
+      const startDate = offer.startDate || offer.start_date || "2000-01-01";
+      const expiryDate = offer.expiryDate || offer.expiry_date || "2099-12-31";
+
+      if (todayStr < startDate || todayStr > expiryDate) {
+        return { valid: false, message: "Invalid or expired referral code." };
+      }
+
+      const usageCount = Number(offer.usageCount ?? offer.usage_count) || 0;
+      const usageLimit = Number(offer.usageLimit ?? offer.usage_limit) || 100;
+      if (usageCount >= usageLimit) {
+        return { valid: false, message: "Referral code usage limit has been reached." };
+      }
+
+      if (customerEmail && customerEmail.trim()) {
+        const usedBy: string[] = offer.usedBy || offer.used_by || [];
+        const userUsageCount = usedBy.filter((e) => e.toLowerCase() === customerEmail.trim().toLowerCase()).length;
+        const perCustomerLimit = Number(offer.perCustomerLimit ?? offer.per_customer_limit) || 1;
+        if (userUsageCount >= perCustomerLimit) {
+          return { valid: false, message: "You have already reached the redemption limit for this code." };
+        }
+      }
+
+      const minPurchase = Number(offer.minimumPurchase ?? offer.minimum_purchase) || 0;
+      const calcSubtotal = subtotalAmount ?? cartItems.reduce((sum, item) => sum + (Number(item.price || item.unitPrice) * (Number(item.quantity) || 1)), 0);
+      if (calcSubtotal < minPurchase) {
+        return { valid: false, message: `Minimum purchase of ₹${minPurchase.toLocaleString("en-IN")} required for code ${cleanCode}.` };
+      }
+
+      const eligibleProducts: string[] = offer.eligibleProducts || offer.eligible_products || ["all"];
+      if (!eligibleProducts.includes("all")) {
+        const cartProdIds = cartItems.map((item) => item.id || item.productId || item.product_id);
+        const hasEligibleProduct = cartProdIds.some((id) => eligibleProducts.includes(id));
+        if (!hasEligibleProduct) {
+          return { valid: false, message: `Offer ${cleanCode} is not applicable to the items in your cart.` };
+        }
+      }
+
+      const discType = offer.discountType || offer.discount_type || "percentage";
+      const discValue = Number(offer.discountValue ?? offer.discount_value) || 0;
+      const maxDiscount = Number(offer.maximumDiscount ?? offer.maximum_discount) || 0;
+
+      let discountAmount = 0;
+      if (discType === "percentage") {
+        discountAmount = (calcSubtotal * discValue) / 100;
+      } else {
+        discountAmount = discValue;
+      }
+
+      if (maxDiscount > 0 && discountAmount > maxDiscount) {
+        discountAmount = maxDiscount;
+      }
+
+      discountAmount = Math.min(discountAmount, calcSubtotal);
+
+      return {
+        valid: true,
+        offer: {
+          id: offer.id,
+          code: offer.offerCode || offer.offer_code,
+          name: offer.offerName || offer.offer_name,
+          discountType: discType,
+          discountValue: discValue,
+          discountAmount,
+          description: offer.description
+        },
+        discountAmount
+      };
+    },
+
+    async incrementUsage(id: string, customerEmail?: string) {
+      const offer = await this.getById(id);
+      if (!offer) return false;
+
+      const currentUsage = Number(offer.usageCount ?? offer.usage_count) || 0;
+      const usageLimit = Number(offer.usageLimit ?? offer.usage_limit) || 100;
+
+      if (currentUsage >= usageLimit) {
+        throw new Error("Offer usage limit reached.");
+      }
+
+      const usedBy: string[] = Array.from(new Set([...(offer.usedBy || offer.used_by || []), customerEmail?.trim().toLowerCase()].filter(Boolean)));
+      const updates = {
+        usageCount: currentUsage + 1,
+        usage_count: currentUsage + 1,
+        usedBy,
+        used_by: usedBy
+      };
+
+      return this.update(offer.id, updates);
     }
   }
 };

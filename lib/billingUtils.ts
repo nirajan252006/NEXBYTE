@@ -13,9 +13,19 @@ export interface LineItemInput {
   discount?: number; // in Rupees
 }
 
+export interface AppliedOfferInput {
+  id: string;
+  code: string;
+  name: string;
+  discountType: "percentage" | "fixed";
+  discountValue: number;
+  discountAmount?: number;
+}
+
 export interface CalculationInput {
   items: LineItemInput[];
   globalDiscount?: number; // in Rupees
+  appliedOffer?: AppliedOfferInput;
   gstEnabled: boolean;
   gstin?: string;
   paymentStatus: "paid" | "pending" | "partially_paid";
@@ -43,6 +53,9 @@ export interface CalculationResult {
   subtotal: number;
   globalDiscountPaise: number;
   globalDiscount: number;
+  offerDiscountPaise: number;
+  offerDiscount: number;
+  appliedOffer: AppliedOfferInput | null;
   taxableAmountPaise: number;
   taxableAmount: number;
   gstEnabled: boolean;
@@ -91,7 +104,7 @@ export function formatPaise(paise: number | undefined | null): string {
 }
 
 /** 
- * Central Calculation Function for Invoice Totals
+ * Central Calculation Function for Invoice & Offer Totals
  * Used by UI form, live preview, backend API, PDF generator, and verification tests.
  */
 export function calculateInvoiceTotals(input: CalculationInput): CalculationResult {
@@ -129,14 +142,38 @@ export function calculateInvoiceTotals(input: CalculationInput): CalculationResu
   // Global discount cannot exceed subtotal
   const requestedGlobalDiscountPaise = toPaise(Number(input.globalDiscount) || 0);
   const globalDiscountPaise = Math.min(requestedGlobalDiscountPaise, subtotalPaise);
-  const taxableAmountPaise = subtotalPaise - globalDiscountPaise;
+  
+  let netSubtotalPaise = subtotalPaise - globalDiscountPaise;
+
+  // Offer / Referral discount
+  let offerDiscountPaise = 0;
+  let verifiedAppliedOffer: AppliedOfferInput | null = null;
+
+  if (input.appliedOffer) {
+    const offer = input.appliedOffer;
+    if (offer.discountAmount != null && !isNaN(offer.discountAmount)) {
+      offerDiscountPaise = Math.min(toPaise(offer.discountAmount), netSubtotalPaise);
+    } else if (offer.discountType === "percentage") {
+      offerDiscountPaise = Math.min(Math.round(netSubtotalPaise * (offer.discountValue / 100)), netSubtotalPaise);
+    } else if (offer.discountType === "fixed") {
+      offerDiscountPaise = Math.min(toPaise(offer.discountValue), netSubtotalPaise);
+    }
+
+    verifiedAppliedOffer = {
+      ...offer,
+      discountAmount: toRupees(offerDiscountPaise)
+    };
+  }
+
+  // Taxable Amount = Subtotal - Global Discount - Offer Discount
+  const taxableAmountPaise = Math.max(0, netSubtotalPaise - offerDiscountPaise);
 
   let cgstPaise = 0;
   let sgstPaise = 0;
   let gstTotalPaise = 0;
 
   if (input.gstEnabled) {
-    // 18% GST split equally into 9% CGST and 9% SGST
+    // 18% GST split equally into 9% CGST and 9% SGST calculated AFTER referral discount
     cgstPaise = Math.round(taxableAmountPaise * 0.09);
     sgstPaise = Math.round(taxableAmountPaise * 0.09);
     gstTotalPaise = cgstPaise + sgstPaise;
@@ -166,6 +203,9 @@ export function calculateInvoiceTotals(input: CalculationInput): CalculationResu
     subtotal: toRupees(subtotalPaise),
     globalDiscountPaise,
     globalDiscount: toRupees(globalDiscountPaise),
+    offerDiscountPaise,
+    offerDiscount: toRupees(offerDiscountPaise),
+    appliedOffer: verifiedAppliedOffer,
     taxableAmountPaise,
     taxableAmount: toRupees(taxableAmountPaise),
     gstEnabled: !!input.gstEnabled,
