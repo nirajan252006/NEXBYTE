@@ -10,33 +10,35 @@ export async function middleware(request: NextRequest) {
 
   // ── ROOT "/" — Authentication Gateway ─────────────────────────────────────
   if (pathname === "/") {
-    // Root URL MUST NOT automatically redirect to /admin, /reseller, or /login.
-    // Always allow the entrance gateway page to render.
     return NextResponse.next();
   }
 
-  // ── /login or /signup — redirect if already authenticated ─────────────────
-  if (pathname === "/login" || pathname === "/signup") {
+  // ── AUTH PAGES — Redirect if already authenticated ───────────────────────
+  const isAuthPage =
+    pathname === "/login" ||
+    pathname === "/signup" ||
+    pathname === "/customer/signin" ||
+    pathname === "/customer/signup" ||
+    pathname === "/customer/forgot-password" ||
+    pathname === "/customer/login";
+
+  if (isAuthPage) {
     const roleParam = request.nextUrl.searchParams.get("role");
+
     if (roleParam === "admin" && adminSession) {
       return NextResponse.redirect(new URL("/admin", request.url));
     }
     if (roleParam === "reseller" && resellerSession) {
       return NextResponse.redirect(new URL("/reseller", request.url));
     }
-    if (roleParam === "user" && userSession) {
+    if ((roleParam === "user" || !roleParam) && userSession) {
       return NextResponse.redirect(new URL("/customer", request.url));
     }
-    if (!roleParam) {
-      if (adminSession) {
-        return NextResponse.redirect(new URL("/admin", request.url));
-      }
-      if (resellerSession) {
-        return NextResponse.redirect(new URL("/reseller", request.url));
-      }
-      if (userSession) {
-        return NextResponse.redirect(new URL("/customer", request.url));
-      }
+    if (adminSession) {
+      return NextResponse.redirect(new URL("/admin", request.url));
+    }
+    if (resellerSession) {
+      return NextResponse.redirect(new URL("/reseller", request.url));
     }
   }
 
@@ -56,13 +58,11 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL("/login?role=admin", request.url));
     }
 
-    // Development mock — accept hardcoded token without requiring Supabase
     if (adminSession === "mock-admin-session-token") {
       return NextResponse.next();
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-
     if (supabaseUrl) {
       try {
         const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
@@ -114,17 +114,16 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // ── /customer/login ───────────────────────────────────────────────────────
-  if (pathname === "/customer/login") {
-    if (userSession) {
-      return NextResponse.redirect(new URL("/customer", request.url));
-    }
-  }
+  // ── /customer/* — require user session (excluding customer auth pages) ────
+  const isCustomerAuthPage =
+    pathname === "/customer/signin" ||
+    pathname === "/customer/signup" ||
+    pathname === "/customer/forgot-password" ||
+    pathname === "/customer/login";
 
-  // ── /customer/* — require user session ────────────────────────────────────
-  if (pathname.startsWith("/customer") && pathname !== "/customer/login") {
+  if (pathname.startsWith("/customer") && !isCustomerAuthPage) {
     if (!userSession) {
-      return NextResponse.redirect(new URL("/login", request.url));
+      return NextResponse.redirect(new URL("/customer/signin", request.url));
     }
   }
 
