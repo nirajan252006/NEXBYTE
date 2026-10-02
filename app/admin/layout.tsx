@@ -32,7 +32,8 @@ import {
   Menu,
   X,
   Store,
-  Sparkles
+  Sparkles,
+  Receipt
 } from "lucide-react";
 import { useState, useEffect, useMemo, Suspense } from "react";
 import { realtimeSync } from "@/lib/realtimeSync";
@@ -41,6 +42,7 @@ import { useNotificationStore } from "@/lib/notificationStore";
 
 const STATIC_NAV_ITEMS = [
   { label: "Overview Dashboard", href: "/admin", icon: LayoutDashboard },
+  { label: "Billing & Invoices", href: "/admin/billing", icon: Receipt },
   { label: "Bookings Logs", href: "/admin/bookings", icon: Calendar },
   { label: "Products Catalog", href: "/admin/products", icon: ShoppingBag },
   { label: "Orders Management", href: "/admin/orders", icon: Package },

@@ -270,6 +270,136 @@ if (!globalRef.__nexbyteMockDb) {
     inventory: [],
     activity_logs: [],
     certificate_sequences: {},
+    invoices: [
+      {
+        id: "inv-1",
+        invoiceNumber: "NXT-2026-00001",
+        customerId: "cust-1",
+        customerName: "Ramesh Kumar",
+        mobile: "9876543210",
+        email: "customer@nexbyte.com",
+        address: "Padmanabhanagar",
+        city: "Bengaluru",
+        state: "Karnataka",
+        pincode: "560070",
+        items: [
+          {
+            id: "inv-item-1",
+            name: "Dell Latitude 7490 Business Laptop",
+            description: "Intel i7 8th Gen, 16GB RAM, 512GB NVMe SSD",
+            quantity: 1,
+            unitPrice: 35000,
+            discount: 2000,
+            unitPricePaise: 3500000,
+            discountPaise: 200000,
+            lineGrossPaise: 3500000,
+            lineDiscountPaise: 200000,
+            lineTotalPaise: 3300000,
+            lineTotal: 33000
+          }
+        ],
+        subtotalPaise: 3300000,
+        subtotal: 33000,
+        globalDiscountPaise: 0,
+        globalDiscount: 0,
+        taxableAmountPaise: 3300000,
+        taxableAmount: 33000,
+        gstEnabled: true,
+        gstin: "29ABCDE1234F1Z5",
+        cgstPaise: 297000,
+        cgst: 2970,
+        sgstPaise: 297000,
+        sgst: 2970,
+        gstTotalPaise: 594000,
+        gstTotal: 5940,
+        grandTotalPaise: 3894000,
+        grandTotal: 38940,
+        paymentMethod: "upi",
+        paymentStatus: "paid",
+        amountPaidPaise: 3894000,
+        amountPaid: 38940,
+        balanceDuePaise: 0,
+        balanceDue: 0,
+        invoiceDate: "2026-07-21",
+        invoiceTime: "11:30 AM",
+        createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+        updatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+        createdBy: "Admin Officer",
+        shareToken: "tok-nxt-2026-00001-sec",
+        status: "active"
+      },
+      {
+        id: "inv-2",
+        invoiceNumber: "NXT-2026-00002",
+        customerId: null,
+        customerName: "Suresh Patel",
+        mobile: "9876501234",
+        email: "suresh.p@gmail.com",
+        address: "Jayanagar 4th Block",
+        city: "Bengaluru",
+        state: "Karnataka",
+        pincode: "560011",
+        items: [
+          {
+            id: "inv-item-2",
+            name: "Laptop Keyboard & Trackpad Repair",
+            description: "Hardware service",
+            quantity: 1,
+            unitPrice: 1500,
+            discount: 0,
+            unitPricePaise: 150000,
+            discountPaise: 0,
+            lineGrossPaise: 150000,
+            lineDiscountPaise: 0,
+            lineTotalPaise: 150000,
+            lineTotal: 1500
+          },
+          {
+            id: "inv-item-3",
+            name: "16GB DDR4 RAM Upgrade",
+            description: "Kingston 3200MHz DDR4 SODIMM",
+            quantity: 2,
+            unitPrice: 2500,
+            discount: 200,
+            unitPricePaise: 250000,
+            discountPaise: 20000,
+            lineGrossPaise: 500000,
+            lineDiscountPaise: 20000,
+            lineTotalPaise: 480000,
+            lineTotal: 4800
+          }
+        ],
+        subtotalPaise: 630000,
+        subtotal: 6300,
+        globalDiscountPaise: 30000,
+        globalDiscount: 300,
+        taxableAmountPaise: 600000,
+        taxableAmount: 6000,
+        gstEnabled: false,
+        gstin: "",
+        cgstPaise: 0,
+        cgst: 0,
+        sgstPaise: 0,
+        sgst: 0,
+        gstTotalPaise: 0,
+        gstTotal: 0,
+        grandTotalPaise: 600000,
+        grandTotal: 6000,
+        paymentMethod: "cash",
+        paymentStatus: "partially_paid",
+        amountPaidPaise: 200000,
+        amountPaid: 2000,
+        balanceDuePaise: 400000,
+        balanceDue: 4000,
+        invoiceDate: "2026-07-22",
+        invoiceTime: "03:15 PM",
+        createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+        updatedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+        createdBy: "Admin Officer",
+        shareToken: "tok-nxt-2026-00002-sec",
+        status: "active"
+      }
+    ],
     resellers: [
       {
         id: "res-1",
@@ -2314,6 +2444,134 @@ export const dbHelper = {
       saveMockData("messages", [...list, payload]);
       notifyDataChange("messages", "insert", payload);
       return payload;
+    }
+  },
+
+  // --- INVOICES SECTION ---
+  invoices: {
+    async list() {
+      if (supabase) {
+        const { data } = await supabase.from("invoices").select("*").order("created_at", { ascending: false });
+        if (data && data.length > 0) return data;
+      }
+      const list = getMockData("invoices");
+      return (list || []).sort((a: any, b: any) => new Date(b.createdAt || b.created_at).getTime() - new Date(a.createdAt || a.created_at).getTime());
+    },
+
+    async getById(id: string) {
+      if (supabase) {
+        const { data } = await supabase.from("invoices").select("*").or(`id.eq.${id},invoice_number.eq.${id}`).single();
+        if (data) return data;
+      }
+      const list = getMockData("invoices");
+      return list.find((inv: any) => inv.id === id || inv.invoiceNumber === id || inv.invoice_number === id) || null;
+    },
+
+    async getByShareToken(token: string) {
+      if (supabase) {
+        const { data } = await supabase.from("invoices").select("*").eq("share_token", token).single();
+        if (data) return data;
+      }
+      const list = getMockData("invoices");
+      return list.find((inv: any) => inv.shareToken === token || inv.share_token === token) || null;
+    },
+
+    async generateNextNumber() {
+      const year = new Date().getFullYear();
+      const prefix = `NXT-${year}-`;
+      let nextCounter = 1;
+
+      if (supabase) {
+        const { data } = await supabase
+          .from("invoices")
+          .select("invoice_number")
+          .like("invoice_number", `${prefix}%`)
+          .order("invoice_number", { ascending: false })
+          .limit(1);
+
+        if (data && data.length > 0 && data[0].invoice_number) {
+          const parts = data[0].invoice_number.split("-");
+          const counterNum = parseInt(parts[parts.length - 1], 10);
+          if (!isNaN(counterNum)) {
+            nextCounter = counterNum + 1;
+          }
+        }
+      } else {
+        const list = getMockData("invoices");
+        list.forEach((inv: any) => {
+          const numStr = inv.invoiceNumber || inv.invoice_number || "";
+          if (numStr.startsWith(prefix)) {
+            const parts = numStr.split("-");
+            const counterNum = parseInt(parts[parts.length - 1], 10);
+            if (!isNaN(counterNum) && counterNum >= nextCounter) {
+              nextCounter = counterNum + 1;
+            }
+          }
+        });
+      }
+
+      const formattedCounter = String(nextCounter).padStart(5, "0");
+      return `${prefix}${formattedCounter}`;
+    },
+
+    async create(invoiceData: any) {
+      const year = new Date().getFullYear();
+      const invoiceNumber = await this.generateNextNumber();
+      const now = new Date();
+      const invoiceDate = now.toISOString().split("T")[0];
+      const invoiceTime = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
+
+      const payload = {
+        id: `inv-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        invoiceNumber,
+        invoice_number: invoiceNumber,
+        invoiceDate,
+        invoice_date: invoiceDate,
+        invoiceTime,
+        invoice_time: invoiceTime,
+        createdAt: now.toISOString(),
+        created_at: now.toISOString(),
+        updatedAt: now.toISOString(),
+        updated_at: now.toISOString(),
+        shareToken: `tok-${invoiceNumber.toLowerCase()}-${Date.now().toString(36)}`,
+        share_token: `tok-${invoiceNumber.toLowerCase()}-${Date.now().toString(36)}`,
+        status: "active",
+        ...invoiceData,
+      };
+
+      if (supabase) {
+        const { data, error } = await supabase.from("invoices").insert([payload]).select().single();
+        if (data && !error) {
+          notifyDataChange("invoices", "insert", data);
+          return data;
+        }
+      }
+
+      const list = getMockData("invoices");
+      const updated = [payload, ...list];
+      saveMockData("invoices", updated);
+      notifyDataChange("invoices", "insert", payload);
+      return payload;
+    },
+
+    async update(id: string, updates: any) {
+      const payload = { ...updates, updatedAt: new Date().toISOString(), updated_at: new Date().toISOString() };
+      if (supabase) {
+        const { data } = await supabase.from("invoices").update(payload).eq("id", id).select().single();
+        if (data) {
+          notifyDataChange("invoices", "update", data);
+          return data;
+        }
+      }
+      const list = getMockData("invoices");
+      const updated = list.map((inv: any) => (inv.id === id || inv.invoiceNumber === id ? { ...inv, ...payload } : inv));
+      saveMockData("invoices", updated);
+      notifyDataChange("invoices", "update", updated.find((inv: any) => inv.id === id || inv.invoiceNumber === id));
+      return updated.find((inv: any) => inv.id === id || inv.invoiceNumber === id);
+    },
+
+    async cancel(id: string) {
+      return this.update(id, { status: "cancelled" });
     }
   }
 };

@@ -1,0 +1,1581 @@
+"use client";
+
+import { useEffect, useState, useMemo, useRef } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import {
+  Receipt,
+  Plus,
+  Trash2,
+  Copy,
+  Printer,
+  Download,
+  Share2,
+  Search,
+  Filter,
+  CheckCircle,
+  Clock,
+  AlertCircle,
+  FileText,
+  Building,
+  User,
+  Phone,
+  Mail,
+  MapPin,
+  Sparkles,
+  RefreshCw,
+  Eye,
+  X
+} from "lucide-react";
+import { dbHelper } from "@/lib/dbHelper";
+import {
+  calculateInvoiceTotals,
+  formatRupees,
+  validateMobile,
+  validateEmail,
+  validatePincode,
+  validateGSTIN,
+  CalculationResult
+} from "@/lib/billingUtils";
+
+interface FormItem {
+  id: string;
+  name: string;
+  description: string;
+  quantity: number | string;
+  unitPrice: number | string;
+  discount: number | string;
+}
+
+export default function AdminBillingPage() {
+  const [activeTab, setActiveTab] = useState<"create" | "history">("create");
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+  const [successMsg, setSuccessMsg] = useState("");
+
+  // Customer suggestions list
+  const [existingCustomers, setExistingCustomers] = useState<any[]>([]);
+  const [existingCatalog, setExistingCatalog] = useState<{ products: any[]; services: any[] }>({
+    products: [],
+    services: []
+  });
+
+  // Customer Form State
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [customerName, setCustomerName] = useState("");
+  const [mobile, setMobile] = useState("");
+  const [email, setEmail] = useState("");
+  const [address, setAddress] = useState("");
+  const [city, setCity] = useState("Bengaluru");
+  const [state, setState] = useState("Karnataka");
+  const [pincode, setPincode] = useState("560070");
+
+  // Items State
+  const [items, setItems] = useState<FormItem[]>([
+    {
+      id: "item-1",
+      name: "Dell Latitude 7490 Business Laptop",
+      description: "Intel i7 8th Gen, 16GB RAM, 512GB NVMe SSD",
+      quantity: 1,
+      unitPrice: 35000,
+      discount: 2000
+    }
+  ]);
+
+  // Global Financials & Payment State
+  const [globalDiscount, setGlobalDiscount] = useState<number | string>(0);
+  const [gstEnabled, setGstEnabled] = useState<boolean>(true);
+  const [gstin, setGstin] = useState<string>("29ABCDE1234F1Z5");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "upi" | "bank_transfer" | "card" | "other">("upi");
+  const [paymentStatus, setPaymentStatus] = useState<"paid" | "pending" | "partially_paid">("paid");
+  const [amountPaid, setAmountPaid] = useState<number | string>(0);
+
+  // History State
+  const [invoicesHistory, setInvoicesHistory] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [gstFilter, setGstFilter] = useState("all");
+
+  // View Saved Invoice Modal State
+  const [viewingInvoice, setViewingInvoice] = useState<any | null>(null);
+
+  // Print ref
+  const printRef = useRef<HTMLDivElement>(null);
+
+  // Initial Data Load
+  useEffect(() => {
+    loadInitialData();
+  }, []);
+
+  const loadInitialData = async () => {
+    setLoading(true);
+    try {
+      const [uList, pList, sList, invList] = await Promise.all([
+        dbHelper.users.list(),
+        dbHelper.products.list(),
+        dbHelper.services.list(),
+        dbHelper.invoices.list()
+      ]);
+
+      const custs = uList.filter((u: any) => u.role === "customer" || u.role === "user");
+      setExistingCustomers(custs);
+      setExistingCatalog({ products: pList, services: sList });
+      setInvoicesHistory(invList);
+    } catch (e) {
+      console.error("Failed to load initial billing data:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Live Shared Calculations
+  const calculatedTotals: CalculationResult = useMemo(() => {
+    const parsedItems = items.map((item) => ({
+      id: item.id,
+      name: item.name,
+      description: item.description,
+      quantity: Number(item.quantity) || 0,
+      unitPrice: Number(item.unitPrice) || 0,
+      discount: Number(item.discount) || 0
+    }));
+
+    return calculateInvoiceTotals({
+      items: parsedItems,
+      globalDiscount: Number(globalDiscount) || 0,
+      gstEnabled,
+      gstin,
+      paymentStatus,
+      amountPaid: Number(amountPaid) || 0
+    });
+  }, [items, globalDiscount, gstEnabled, gstin, paymentStatus, amountPaid]);
+
+  // Handle selecting an existing customer
+  const handleSelectCustomer = (cust: any) => {
+    setSelectedCustomerId(cust.id);
+    setCustomerName(cust.full_name || cust.name || "");
+    setMobile(cust.phone || "");
+    setEmail(cust.email || "");
+    setAddress(cust.address || "");
+    setCity(cust.city || "Bengaluru");
+    setState(cust.state || "Karnataka");
+    setPincode(cust.pincode || "560070");
+  };
+
+  // Item Table Actions
+  const handleAddItem = () => {
+    setItems((prev) => [
+      ...prev,
+      {
+        id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+        name: "",
+        description: "",
+        quantity: 1,
+        unitPrice: 0,
+        discount: 0
+      }
+    ]);
+  };
+
+  const handleRemoveItem = (id: string) => {
+    if (items.length <= 1) {
+      setErrorMsg("Invoice must contain at least one item.");
+      return;
+    }
+    setErrorMsg("");
+    setItems((prev) => prev.filter((i) => i.id !== id));
+  };
+
+  const handleDuplicateItem = (item: FormItem) => {
+    setItems((prev) => [
+      ...prev,
+      {
+        ...item,
+        id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+        name: `${item.name} (Copy)`
+      }
+    ]);
+  };
+
+  const handleUpdateItem = (id: string, field: keyof FormItem, value: any) => {
+    setItems((prev) =>
+      prev.map((i) => (i.id === id ? { ...i, [field]: value } : i))
+    );
+  };
+
+  // Quick select product/service into line item
+  const handlePickCatalogItem = (itemId: string, catalogItem: any, type: "product" | "service") => {
+    setItems((prev) =>
+      prev.map((i) => {
+        if (i.id === itemId) {
+          return {
+            ...i,
+            name: catalogItem.name || catalogItem.title,
+            description: catalogItem.shortDescription || catalogItem.category || type,
+            unitPrice: catalogItem.price || 0,
+            discount: catalogItem.discount || 0
+          };
+        }
+        return i;
+      })
+    );
+  };
+
+  // Submit & Save Invoice
+  const handleSaveInvoice = async () => {
+    setErrorMsg("");
+    setSuccessMsg("");
+
+    // 1. Validations
+    if (!customerName.trim()) {
+      setErrorMsg("Customer Name is required.");
+      return;
+    }
+
+    if (!mobile.trim() || !validateMobile(mobile)) {
+      setErrorMsg("Please enter a valid 10-digit Indian Mobile Number.");
+      return;
+    }
+
+    if (email && !validateEmail(email)) {
+      setErrorMsg("Invalid Email address format.");
+      return;
+    }
+
+    if (pincode && !validatePincode(pincode)) {
+      setErrorMsg("Invalid 6-digit Indian Pincode.");
+      return;
+    }
+
+    if (gstEnabled && gstin && !validateGSTIN(gstin)) {
+      setErrorMsg("Invalid 15-character Indian GSTIN format.");
+      return;
+    }
+
+    if (items.some((i) => !i.name.trim())) {
+      setErrorMsg("All line items must have an Item Name.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload = {
+        customerId: selectedCustomerId,
+        customerName,
+        mobile,
+        email,
+        address,
+        city,
+        state,
+        pincode,
+        items,
+        globalDiscount: Number(globalDiscount) || 0,
+        gstEnabled,
+        gstin,
+        paymentMethod,
+        paymentStatus,
+        amountPaid: Number(amountPaid) || 0
+      };
+
+      const res = await fetch("/api/admin/invoices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to save invoice.");
+      }
+
+      setSuccessMsg(`Invoice ${data.invoice.invoiceNumber} created and saved successfully!`);
+      
+      // Refresh history list
+      loadInitialData();
+
+      // Open viewing modal of saved invoice
+      setViewingInvoice(data.invoice);
+    } catch (err: any) {
+      setErrorMsg(err.message || "An error occurred while saving the invoice.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleResetForm = () => {
+    setSelectedCustomerId(null);
+    setCustomerName("");
+    setMobile("");
+    setEmail("");
+    setAddress("");
+    setCity("Bengaluru");
+    setState("Karnataka");
+    setPincode("560070");
+    setItems([
+      {
+        id: `item-${Date.now()}`,
+        name: "",
+        description: "",
+        quantity: 1,
+        unitPrice: 0,
+        discount: 0
+      }
+    ]);
+    setGlobalDiscount(0);
+    setGstEnabled(false);
+    setGstin("");
+    setPaymentMethod("cash");
+    setPaymentStatus("paid");
+    setAmountPaid(0);
+    setErrorMsg("");
+    setSuccessMsg("");
+  };
+
+  // Actions: Print, Download PDF, Share
+  const handlePrint = (invoiceObj?: any) => {
+    window.print();
+  };
+
+  const handleDownloadPdf = (invNumber: string) => {
+    // Standard print to PDF window trigger or document export
+    window.print();
+  };
+
+  const handleShare = async (invoiceObj: any) => {
+    const invNum = invoiceObj.invoiceNumber || invoiceObj.invoice_number || "Invoice";
+    const shareUrl = `${window.location.origin}/invoice/view/${invoiceObj.shareToken || invoiceObj.share_token || invoiceObj.id}`;
+    const shareText = `NexByte Technologies Invoice ${invNum} for ${invoiceObj.customerName || invoiceObj.customer_name}. Total: ${formatRupees(invoiceObj.grandTotal || invoiceObj.grand_total)}`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `NexByte Invoice ${invNum}`,
+          text: shareText,
+          url: shareUrl
+        });
+        return;
+      } catch (e) {}
+    }
+
+    // Fallback: Copy share link to clipboard
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      alert(`Share Link copied to clipboard:\n${shareUrl}`);
+    } catch (e) {
+      alert(`Invoice Share Link:\n${shareUrl}`);
+    }
+  };
+
+  // History Filtered Records
+  const filteredHistory = useMemo(() => {
+    return invoicesHistory.filter((inv) => {
+      const q = searchQuery.toLowerCase().trim();
+      const numStr = (inv.invoiceNumber || inv.invoice_number || "").toLowerCase();
+      const nameStr = (inv.customerName || inv.customer_name || "").toLowerCase();
+      const mobileStr = (inv.mobile || "").toLowerCase();
+
+      const matchesSearch = !q || numStr.includes(q) || nameStr.includes(q) || mobileStr.includes(q);
+
+      const payStatus = inv.paymentStatus || inv.payment_status || "pending";
+      const matchesStatus = statusFilter === "all" || payStatus === statusFilter;
+
+      const isGst = !!(inv.gstEnabled ?? inv.gst_enabled);
+      const matchesGst =
+        gstFilter === "all" ||
+        (gstFilter === "enabled" && isGst) ||
+        (gstFilter === "disabled" && !isGst);
+
+      return matchesSearch && matchesStatus && matchesGst;
+    });
+  }, [invoicesHistory, searchQuery, statusFilter, gstFilter]);
+
+  // Aggregate Metrics
+  const historyStats = useMemo(() => {
+    const totalCount = invoicesHistory.length;
+    const paidCount = invoicesHistory.filter((i) => (i.paymentStatus || i.payment_status) === "paid").length;
+    const pendingCount = invoicesHistory.filter((i) => (i.paymentStatus || i.payment_status) === "pending").length;
+    const totalRevenue = invoicesHistory.reduce((sum, i) => sum + (Number(i.grandTotal || i.grand_total) || 0), 0);
+    return { totalCount, paidCount, pendingCount, totalRevenue };
+  }, [invoicesHistory]);
+
+  return (
+    <div className="space-y-6">
+      
+      {/* ── PRINT-ONLY INVOICE WRAPPER ────────────────────────────────────────── */}
+      <div className="hidden print:block print:fixed print:inset-0 print:bg-white print:text-black print:p-8 print:z-[99999] bg-white text-black p-8">
+        <PrintableInvoiceDocument
+          invoice={viewingInvoice || {
+            invoiceNumber: "NXT-2026-DRAFT",
+            invoiceDate: new Date().toISOString().split("T")[0],
+            invoiceTime: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }),
+            customerName,
+            mobile,
+            email,
+            address,
+            city,
+            state,
+            pincode,
+            items: calculatedTotals.items,
+            subtotal: calculatedTotals.subtotal,
+            globalDiscount: calculatedTotals.globalDiscount,
+            taxableAmount: calculatedTotals.taxableAmount,
+            gstEnabled: calculatedTotals.gstEnabled,
+            gstin: calculatedTotals.gstin,
+            cgst: calculatedTotals.cgst,
+            sgst: calculatedTotals.sgst,
+            gstTotal: calculatedTotals.gstTotal,
+            grandTotal: calculatedTotals.grandTotal,
+            paymentMethod,
+            paymentStatus: calculatedTotals.paymentStatus,
+            amountPaid: calculatedTotals.amountPaid,
+            balanceDue: calculatedTotals.balanceDue,
+            createdBy: "Admin Officer"
+          }}
+        />
+      </div>
+
+      {/* ── SCREEN UI HEADER ─────────────────────────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-white/10 pb-5">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <div className="h-9 w-9 rounded-xl bg-nex-blue/15 border border-nex-blue/30 text-nex-blueLight flex items-center justify-center">
+              <Receipt className="h-5 w-5" />
+            </div>
+            <div>
+              <h1 className="font-display text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+                Admin Billing &amp; Invoices
+              </h1>
+              <p className="text-xs text-nex-mist">
+                Create, calculate, issue &amp; manage tax-compliant NexByte invoices.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="flex items-center gap-2 bg-nex-ink p-1 rounded-xl border border-white/10">
+          <button
+            onClick={() => setActiveTab("create")}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+              activeTab === "create"
+                ? "bg-nex-blue text-white shadow-glow-blue"
+                : "text-nex-mist hover:text-white hover:bg-white/5"
+            }`}
+          >
+            <Plus className="h-3.5 w-3.5" /> Create New Invoice
+          </button>
+          <button
+            onClick={() => setActiveTab("history")}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+              activeTab === "history"
+                ? "bg-nex-blue text-white shadow-glow-blue"
+                : "text-nex-mist hover:text-white hover:bg-white/5"
+            }`}
+          >
+            <Receipt className="h-3.5 w-3.5" /> Invoice History ({historyStats.totalCount})
+          </button>
+        </div>
+      </div>
+
+      {/* ── METRICS BAR ──────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="glass-panel p-4 rounded-xl bg-nex-ink border border-white/5">
+          <span className="text-[10px] font-bold text-nex-mist uppercase tracking-wider block">Total Invoices</span>
+          <span className="font-display text-xl font-bold text-white mt-1 block">{historyStats.totalCount}</span>
+        </div>
+        <div className="glass-panel p-4 rounded-xl bg-nex-ink border border-white/5">
+          <span className="text-[10px] font-bold text-nex-mist uppercase tracking-wider block">Total Billed Revenue</span>
+          <span className="font-display text-xl font-bold text-gradient-blue mt-1 block">
+            {formatRupees(historyStats.totalRevenue)}
+          </span>
+        </div>
+        <div className="glass-panel p-4 rounded-xl bg-nex-ink border border-white/5">
+          <span className="text-[10px] font-bold text-green-400 uppercase tracking-wider block">Paid Invoices</span>
+          <span className="font-display text-xl font-bold text-green-400 mt-1 block">{historyStats.paidCount}</span>
+        </div>
+        <div className="glass-panel p-4 rounded-xl bg-nex-ink border border-white/5">
+          <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider block">Pending / Partial</span>
+          <span className="font-display text-xl font-bold text-amber-400 mt-1 block">{historyStats.pendingCount}</span>
+        </div>
+      </div>
+
+      {/* ── MESSAGES DISPLAY ─────────────────────────────────────────────────── */}
+      {errorMsg && (
+        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>{errorMsg}</span>
+        </div>
+      )}
+      {successMsg && (
+        <div className="p-4 rounded-xl bg-green-500/10 border border-green-500/30 text-green-400 text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="h-4 w-4 shrink-0" />
+            <span>{successMsg}</span>
+          </div>
+          <button
+            onClick={() => setActiveTab("history")}
+            className="text-xs underline hover:text-white font-bold"
+          >
+            View in History &rarr;
+          </button>
+        </div>
+      )}
+
+      {/* ── CREATE INVOICE WORKSPACE ────────────────────────────────────────── */}
+      {activeTab === "create" && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          
+          {/* LEFT COLUMN: INVOICE FORM (7 cols) */}
+          <div className="lg:col-span-7 space-y-6">
+            
+            {/* 1. Customer Details Section */}
+            <div className="glass-panel p-6 rounded-2xl bg-nex-ink border border-white/5 space-y-4">
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <h3 className="font-display text-sm font-bold text-white flex items-center gap-2">
+                  <User className="h-4 w-4 text-nex-blueLight" /> 1. Customer Details
+                </h3>
+                {existingCustomers.length > 0 && (
+                  <div className="text-[10px] text-nex-mist flex items-center gap-1">
+                    <span>Quick Select:</span>
+                    <select
+                      onChange={(e) => {
+                        const found = existingCustomers.find((c) => c.id === e.target.value);
+                        if (found) handleSelectCustomer(found);
+                      }}
+                      className="bg-nex-black text-white text-[11px] px-2 py-1 rounded border border-white/10 focus:outline-none"
+                    >
+                      <option value="">Select Existing Client...</option>
+                      {existingCustomers.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.full_name || c.name} ({c.phone})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div>
+                  <label className="block text-[11px] font-semibold text-nex-mist mb-1">
+                    Customer Name <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="e.g. Ramesh Kumar"
+                    className="w-full rounded-xl bg-nex-black border border-white/10 px-3.5 py-2.5 text-white text-xs placeholder:text-white/30 focus:border-nex-blue focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-nex-mist mb-1">
+                    Mobile Number (10 digits) <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={10}
+                    value={mobile}
+                    onChange={(e) => setMobile(e.target.value.replace(/\D/g, ""))}
+                    placeholder="e.g. 9876543210"
+                    className="w-full rounded-xl bg-nex-black border border-white/10 px-3.5 py-2.5 text-white text-xs placeholder:text-white/30 focus:border-nex-blue focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-nex-mist mb-1">Email Address</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="customer@email.com"
+                    className="w-full rounded-xl bg-nex-black border border-white/10 px-3.5 py-2.5 text-white text-xs placeholder:text-white/30 focus:border-nex-blue focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-nex-mist mb-1">City</label>
+                  <input
+                    type="text"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    placeholder="Bengaluru"
+                    className="w-full rounded-xl bg-nex-black border border-white/10 px-3.5 py-2.5 text-white text-xs placeholder:text-white/30 focus:border-nex-blue focus:outline-none"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-[11px] font-semibold text-nex-mist mb-1">Street Address</label>
+                  <input
+                    type="text"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    placeholder="House/Shop No., Street, Area"
+                    className="w-full rounded-xl bg-nex-black border border-white/10 px-3.5 py-2.5 text-white text-xs placeholder:text-white/30 focus:border-nex-blue focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-nex-mist mb-1">State</label>
+                  <input
+                    type="text"
+                    value={state}
+                    onChange={(e) => setState(e.target.value)}
+                    placeholder="Karnataka"
+                    className="w-full rounded-xl bg-nex-black border border-white/10 px-3.5 py-2.5 text-white text-xs placeholder:text-white/30 focus:border-nex-blue focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-nex-mist mb-1">Pincode (6 digits)</label>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    value={pincode}
+                    onChange={(e) => setPincode(e.target.value.replace(/\D/g, ""))}
+                    placeholder="560070"
+                    className="w-full rounded-xl bg-nex-black border border-white/10 px-3.5 py-2.5 text-white text-xs placeholder:text-white/30 focus:border-nex-blue focus:outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 2. Product / Service Items Section */}
+            <div className="glass-panel p-6 rounded-2xl bg-nex-ink border border-white/5 space-y-4">
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <h3 className="font-display text-sm font-bold text-white flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-nex-blueLight" /> 2. Items &amp; Services ({items.length})
+                </h3>
+                <button
+                  type="button"
+                  onClick={handleAddItem}
+                  className="btn-primary !py-1.5 !px-3 text-xs flex items-center gap-1"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add Item
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {items.map((item, index) => {
+                  const lineTotalCalculated =
+                    (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0) -
+                    (Number(item.discount) || 0);
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="p-4 rounded-xl bg-white/[0.02] border border-white/10 space-y-3 relative group"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-nex-blueLight uppercase tracking-wider">
+                          Item #{index + 1}
+                        </span>
+
+                        {/* Catalog quick loader dropdown */}
+                        <div className="flex items-center gap-2">
+                          <select
+                            onChange={(e) => {
+                              const [type, id] = e.target.value.split(":");
+                              if (type === "prod") {
+                                const p = existingCatalog.products.find((x) => x.id === id);
+                                if (p) handlePickCatalogItem(item.id, p, "product");
+                              } else if (type === "serv") {
+                                const s = existingCatalog.services.find((x) => x.id === id);
+                                if (s) handlePickCatalogItem(item.id, s, "service");
+                              }
+                            }}
+                            className="bg-nex-black text-white text-[10px] px-2 py-1 rounded border border-white/10 focus:outline-none"
+                          >
+                            <option value="">+ Insert Catalog Item...</option>
+                            <optgroup label="Products">
+                              {existingCatalog.products.map((p) => (
+                                <option key={p.id} value={`prod:${p.id}`}>
+                                  {p.name} (₹{p.price})
+                                </option>
+                              ))}
+                            </optgroup>
+                            <optgroup label="Services">
+                              {existingCatalog.services.map((s) => (
+                                <option key={s.id} value={`serv:${s.id}`}>
+                                  {s.title} (₹{s.price})
+                                </option>
+                              ))}
+                            </optgroup>
+                          </select>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDuplicateItem(item)}
+                            title="Duplicate Item"
+                            className="p-1 rounded bg-white/5 hover:bg-white/10 text-nex-mist hover:text-white"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveItem(item.id)}
+                            title="Remove Item"
+                            className="p-1 rounded bg-red-500/10 hover:bg-red-500/20 text-red-400"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 text-xs">
+                        <div className="sm:col-span-7">
+                          <label className="block text-[10px] text-nex-mist mb-1">
+                            Item Name / Title <span className="text-red-400">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={item.name}
+                            onChange={(e) => handleUpdateItem(item.id, "name", e.target.value)}
+                            placeholder="e.g. Kingston 16GB DDR4 RAM"
+                            className="w-full rounded-lg bg-nex-black border border-white/10 px-3 py-2 text-white text-xs placeholder:text-white/30 focus:border-nex-blue focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-5">
+                          <label className="block text-[10px] text-nex-mist mb-1">Description (Optional)</label>
+                          <input
+                            type="text"
+                            value={item.description}
+                            onChange={(e) => handleUpdateItem(item.id, "description", e.target.value)}
+                            placeholder="e.g. 3200MHz SODIMM Laptop Memory"
+                            className="w-full rounded-lg bg-nex-black border border-white/10 px-3 py-2 text-white text-xs placeholder:text-white/30 focus:border-nex-blue focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-3">
+                          <label className="block text-[10px] text-nex-mist mb-1">
+                            Qty <span className="text-red-400">*</span>
+                          </label>
+                          <input
+                            type="number"
+                            min={1}
+                            value={item.quantity}
+                            onChange={(e) => handleUpdateItem(item.id, "quantity", e.target.value)}
+                            className="w-full rounded-lg bg-nex-black border border-white/10 px-3 py-2 text-white text-xs focus:border-nex-blue focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-3">
+                          <label className="block text-[10px] text-nex-mist mb-1">
+                            Unit Price (₹) <span className="text-red-400">*</span>
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={item.unitPrice}
+                            onChange={(e) => handleUpdateItem(item.id, "unitPrice", e.target.value)}
+                            className="w-full rounded-lg bg-nex-black border border-white/10 px-3 py-2 text-white text-xs focus:border-nex-blue focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-3">
+                          <label className="block text-[10px] text-nex-mist mb-1">Discount (₹)</label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={item.discount}
+                            onChange={(e) => handleUpdateItem(item.id, "discount", e.target.value)}
+                            className="w-full rounded-lg bg-nex-black border border-white/10 px-3 py-2 text-white text-xs focus:border-nex-blue focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-3 text-right">
+                          <label className="block text-[10px] text-nex-mist mb-1">Line Total</label>
+                          <span className="font-bold text-white text-xs block py-2">
+                            {formatRupees(Math.max(0, lineTotalCalculated))}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 3. Global Discount & GST Configuration */}
+            <div className="glass-panel p-6 rounded-2xl bg-nex-ink border border-white/5 space-y-4">
+              <h3 className="font-display text-sm font-bold text-white border-b border-white/10 pb-3 flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-nex-blueLight" /> 3. Global Discount &amp; GST Configuration
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                <div>
+                  <label className="block text-[11px] font-semibold text-nex-mist mb-1">
+                    Global Discount (₹)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={globalDiscount}
+                    onChange={(e) => setGlobalDiscount(e.target.value)}
+                    placeholder="0"
+                    className="w-full rounded-xl bg-nex-black border border-white/10 px-3.5 py-2.5 text-white text-xs focus:border-nex-blue focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-nex-mist mb-1">GST Application</label>
+                  <div className="flex items-center gap-2 bg-nex-black border border-white/10 p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setGstEnabled(false)}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        !gstEnabled ? "bg-red-500/20 text-red-400 border border-red-500/30" : "text-nex-mist"
+                      }`}
+                    >
+                      GST OFF
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGstEnabled(true)}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        gstEnabled ? "bg-green-500/20 text-green-400 border border-green-500/30" : "text-nex-mist"
+                      }`}
+                    >
+                      GST ON (18%)
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-nex-mist mb-1">
+                    GSTIN (Optional 15-chars)
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={15}
+                    value={gstin}
+                    onChange={(e) => setGstin(e.target.value.toUpperCase())}
+                    placeholder="29ABCDE1234F1Z5"
+                    className="w-full rounded-xl bg-nex-black border border-white/10 px-3.5 py-2.5 text-white text-xs uppercase placeholder:text-white/30 focus:border-nex-blue focus:outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 4. Payment Method & Status */}
+            <div className="glass-panel p-6 rounded-2xl bg-nex-ink border border-white/5 space-y-4">
+              <h3 className="font-display text-sm font-bold text-white border-b border-white/10 pb-3 flex items-center gap-2">
+                <Building className="h-4 w-4 text-nex-blueLight" /> 4. Payment Details
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                <div>
+                  <label className="block text-[11px] font-semibold text-nex-mist mb-1">Payment Method</label>
+                  <select
+                    value={paymentMethod}
+                    onChange={(e: any) => setPaymentMethod(e.target.value)}
+                    className="w-full rounded-xl bg-nex-black border border-white/10 px-3.5 py-2.5 text-white text-xs focus:border-nex-blue focus:outline-none"
+                  >
+                    <option value="cash">Cash</option>
+                    <option value="upi">UPI / QR Code</option>
+                    <option value="bank_transfer">Bank Transfer / NEFT</option>
+                    <option value="card">Credit / Debit Card</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-nex-mist mb-1">Payment Status</label>
+                  <select
+                    value={paymentStatus}
+                    onChange={(e: any) => setPaymentStatus(e.target.value)}
+                    className="w-full rounded-xl bg-nex-black border border-white/10 px-3.5 py-2.5 text-white text-xs focus:border-nex-blue focus:outline-none"
+                  >
+                    <option value="paid">Paid (Full)</option>
+                    <option value="pending">Pending (Unpaid)</option>
+                    <option value="partially_paid">Partially Paid</option>
+                  </select>
+                </div>
+
+                {paymentStatus === "partially_paid" && (
+                  <div>
+                    <label className="block text-[11px] font-semibold text-nex-mist mb-1">Amount Paid (₹)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={amountPaid}
+                      onChange={(e) => setAmountPaid(e.target.value)}
+                      placeholder="0"
+                      className="w-full rounded-xl bg-nex-black border border-white/10 px-3.5 py-2.5 text-white text-xs focus:border-nex-blue focus:outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-between gap-4 pt-2">
+              <button
+                type="button"
+                onClick={handleResetForm}
+                className="btn-secondary !py-2.5 !px-5 text-xs text-nex-mist hover:text-white"
+              >
+                Reset Form
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveInvoice}
+                disabled={saving}
+                className="btn-primary !py-3 !px-8 text-xs font-bold flex items-center gap-2 shadow-glow-blue"
+              >
+                {saving ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 animate-spin" /> Saving Invoice...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="h-4 w-4" /> Save &amp; Generate Invoice
+                  </>
+                )}
+              </button>
+            </div>
+
+          </div>
+
+          {/* RIGHT COLUMN: LIVE INVOICE PREVIEW (5 cols) */}
+          <div className="lg:col-span-5 space-y-4">
+            <div className="flex items-center justify-between bg-nex-ink p-4 rounded-2xl border border-white/10">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />
+                <span className="text-xs font-bold text-white">Live Invoice Preview</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handlePrint()}
+                  title="Print Invoice"
+                  className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white text-xs flex items-center gap-1.5 transition-all"
+                >
+                  <Printer className="h-3.5 w-3.5" /> Print
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDownloadPdf("NXT-2026-DRAFT")}
+                  title="Download PDF"
+                  className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white text-xs flex items-center gap-1.5 transition-all"
+                >
+                  <Download className="h-3.5 w-3.5" /> PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleShare({
+                      invoiceNumber: "NXT-2026-DRAFT",
+                      customerName,
+                      grandTotal: calculatedTotals.grandTotal
+                    })
+                  }
+                  title="Share Invoice"
+                  className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white text-xs flex items-center gap-1.5 transition-all"
+                >
+                  <Share2 className="h-3.5 w-3.5" /> Share
+                </button>
+              </div>
+            </div>
+
+            {/* Preview Canvas Component */}
+            <div className="bg-white text-slate-900 rounded-2xl p-6 shadow-2xl border border-slate-200 text-xs font-sans space-y-5">
+              
+              {/* Invoice Canvas Header */}
+              <div className="flex justify-between items-start border-b border-slate-200 pb-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="relative h-8 w-8">
+                      <Image
+                        src="/images/logo-icon-transparent.png"
+                        alt="NexByte"
+                        fill
+                        className="object-contain"
+                      />
+                    </div>
+                    <span className="font-bold text-base tracking-tight text-slate-900">
+                      NEX<span className="text-blue-600">BYTE</span> TECHNOLOGIES
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 font-medium">
+                    Connecting Customers with Trusted Tech Experts
+                  </p>
+                  <p className="text-[9px] text-slate-400">
+                    #372, 1st Floor, MK Puttalingaiah Road, Uttarahalli Main Road, Bengaluru 560070
+                  </p>
+                </div>
+
+                <div className="text-right space-y-1">
+                  <span className="inline-block px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-[10px] font-bold">
+                    TAX INVOICE
+                  </span>
+                  <div className="text-[11px] font-bold text-slate-800">NXT-2026-PREVIEW</div>
+                  <div className="text-[9px] text-slate-500">Date: {new Date().toLocaleDateString("en-IN")}</div>
+                  <div className="text-[9px] text-slate-500">
+                    Time: {new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Customer Details */}
+              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3.5 rounded-xl border border-slate-100 text-[11px]">
+                <div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">
+                    BILL TO:
+                  </span>
+                  <div className="font-bold text-slate-900">{customerName || "Customer Name"}</div>
+                  <div className="text-slate-600">{mobile ? `Mob: ${mobile}` : "Mobile: ----------"}</div>
+                  {email && <div className="text-slate-600">Email: {email}</div>}
+                </div>
+                <div className="text-right">
+                  {address && <div className="text-slate-600">{address}</div>}
+                  <div className="text-slate-600">
+                    {[city, state, pincode].filter(Boolean).join(", ")}
+                  </div>
+                  {gstEnabled && gstin && (
+                    <div className="mt-1 font-bold text-blue-700 text-[10px]">
+                      GSTIN: {gstin}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Items Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-[11px] text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-100 text-slate-600 font-bold text-[10px]">
+                      <th className="py-2 px-2">#</th>
+                      <th className="py-2 px-2">Item Description</th>
+                      <th className="py-2 px-2 text-center">Qty</th>
+                      <th className="py-2 px-2 text-right">Price</th>
+                      <th className="py-2 px-2 text-right">Disc</th>
+                      <th className="py-2 px-2 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {calculatedTotals.items.map((item, idx) => (
+                      <tr key={item.id} className="text-slate-700">
+                        <td className="py-2 px-2 text-slate-400">{idx + 1}</td>
+                        <td className="py-2 px-2">
+                          <div className="font-semibold text-slate-900">{item.name || "Untitled Item"}</div>
+                          {item.description && (
+                            <div className="text-[9px] text-slate-500">{item.description}</div>
+                          )}
+                        </td>
+                        <td className="py-2 px-2 text-center font-medium">{item.quantity}</td>
+                        <td className="py-2 px-2 text-right">{formatRupees(item.unitPrice)}</td>
+                        <td className="py-2 px-2 text-right text-slate-500">
+                          {item.discount > 0 ? formatRupees(item.discount) : "-"}
+                        </td>
+                        <td className="py-2 px-2 text-right font-bold text-slate-900">
+                          {formatRupees(item.lineTotal)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Financial Totals Breakdown */}
+              <div className="border-t border-slate-200 pt-3 flex justify-end">
+                <div className="w-full max-w-[240px] space-y-1.5 text-[11px]">
+                  <div className="flex justify-between text-slate-600">
+                    <span>Subtotal:</span>
+                    <span className="font-medium text-slate-900">{formatRupees(calculatedTotals.subtotal)}</span>
+                  </div>
+
+                  {calculatedTotals.globalDiscount > 0 && (
+                    <div className="flex justify-between text-emerald-600">
+                      <span>Global Discount:</span>
+                      <span>-{formatRupees(calculatedTotals.globalDiscount)}</span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between text-slate-600 font-semibold border-t border-slate-100 pt-1">
+                    <span>Taxable Amount:</span>
+                    <span>{formatRupees(calculatedTotals.taxableAmount)}</span>
+                  </div>
+
+                  {calculatedTotals.gstEnabled && (
+                    <>
+                      <div className="flex justify-between text-slate-500 text-[10px]">
+                        <span>CGST (9%):</span>
+                        <span>{formatRupees(calculatedTotals.cgst)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-500 text-[10px]">
+                        <span>SGST (9%):</span>
+                        <span>{formatRupees(calculatedTotals.sgst)}</span>
+                      </div>
+                      <div className="flex justify-between text-blue-700 font-medium text-[10px]">
+                        <span>GST Total (18%):</span>
+                        <span>{formatRupees(calculatedTotals.gstTotal)}</span>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="flex justify-between text-sm font-bold text-slate-900 border-t-2 border-slate-900 pt-1.5">
+                    <span>Grand Total:</span>
+                    <span className="text-blue-700">{formatRupees(calculatedTotals.grandTotal)}</span>
+                  </div>
+
+                  {/* Payment Details */}
+                  <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 mt-2 space-y-1 text-[10px]">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Payment Status:</span>
+                      <span className="font-bold uppercase text-slate-900">{calculatedTotals.paymentStatus}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Amount Paid:</span>
+                      <span className="font-semibold text-emerald-700">{formatRupees(calculatedTotals.amountPaid)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold">
+                      <span className="text-slate-700">Balance Due:</span>
+                      <span className={calculatedTotals.balanceDue > 0 ? "text-amber-600" : "text-slate-900"}>
+                        {formatRupees(calculatedTotals.balanceDue)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer Terms */}
+              <div className="border-t border-slate-200 pt-3 text-[9px] text-slate-400 text-center space-y-0.5">
+                <p>Thank you for choosing NexByte Technologies!</p>
+                <p>Computers • Laptop Service • Gaming PCs • Bulk IT Hardware • CCTV Systems</p>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* ── INVOICE HISTORY TABLE WORKSPACE ──────────────────────────────────── */}
+      {activeTab === "history" && (
+        <div className="space-y-4">
+          
+          {/* Filters & Search Header */}
+          <div className="glass-panel p-4 rounded-2xl bg-nex-ink border border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4">
+            
+            {/* Search Input */}
+            <div className="relative w-full sm:w-80">
+              <Search className="h-4 w-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-nex-mist" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search Invoice #, Name, Mobile..."
+                className="w-full rounded-xl bg-nex-black border border-white/10 pl-10 pr-4 py-2 text-white text-xs placeholder:text-white/30 focus:border-nex-blue focus:outline-none"
+              />
+            </div>
+
+            {/* Filters */}
+            <div className="flex items-center gap-3 w-full sm:w-auto text-xs">
+              <div className="flex items-center gap-1.5">
+                <Filter className="h-3.5 w-3.5 text-nex-mist" />
+                <span className="text-nex-mist text-[11px]">Status:</span>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="bg-nex-black text-white text-xs px-2.5 py-1.5 rounded-lg border border-white/10 focus:outline-none"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="paid">Paid</option>
+                  <option value="pending">Pending</option>
+                  <option value="partially_paid">Partially Paid</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-nex-mist text-[11px]">GST:</span>
+                <select
+                  value={gstFilter}
+                  onChange={(e) => setGstFilter(e.target.value)}
+                  className="bg-nex-black text-white text-xs px-2.5 py-1.5 rounded-lg border border-white/10 focus:outline-none"
+                >
+                  <option value="all">All Invoices</option>
+                  <option value="enabled">GST ON Only</option>
+                  <option value="disabled">GST OFF Only</option>
+                </select>
+              </div>
+            </div>
+
+          </div>
+
+          {/* Table Container */}
+          <div className="glass-panel rounded-2xl bg-nex-ink border border-white/5 overflow-hidden">
+            {filteredHistory.length === 0 ? (
+              <div className="text-center py-16 space-y-3">
+                <Receipt className="h-10 w-10 text-nex-mist mx-auto" />
+                <p className="text-xs text-nex-mist">No billing invoices match the specified criteria.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-white/[0.02] border-b border-white/10 text-nex-mist uppercase text-[10px] font-bold tracking-wider">
+                    <tr>
+                      <th className="py-3.5 px-4">Invoice #</th>
+                      <th className="py-3.5 px-4">Customer</th>
+                      <th className="py-3.5 px-4">Date &amp; Time</th>
+                      <th className="py-3.5 px-4 text-right">Taxable</th>
+                      <th className="py-3.5 px-4 text-right">GST Total</th>
+                      <th className="py-3.5 px-4 text-right">Grand Total</th>
+                      <th className="py-3.5 px-4 text-center">Status</th>
+                      <th className="py-3.5 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {filteredHistory.map((inv) => {
+                      const numStr = inv.invoiceNumber || inv.invoice_number;
+                      const dateStr = inv.invoiceDate || inv.invoice_date;
+                      const timeStr = inv.invoiceTime || inv.invoice_time;
+                      const custName = inv.customerName || inv.customer_name;
+                      const mob = inv.mobile;
+                      const grand = Number(inv.grandTotal || inv.grand_total) || 0;
+                      const taxable = Number(inv.taxableAmount || inv.taxable_amount) || 0;
+                      const gstTotal = Number(inv.gstTotal || inv.gst_total) || 0;
+                      const payStatus = inv.paymentStatus || inv.payment_status || "pending";
+
+                      return (
+                        <tr key={inv.id} className="hover:bg-white/[0.01] transition-all">
+                          <td className="py-3.5 px-4 font-bold text-white flex items-center gap-2">
+                            <span>{numStr}</span>
+                            {inv.status === "cancelled" && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 font-normal">
+                                Cancelled
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            <div className="font-semibold text-white">{custName}</div>
+                            <div className="text-[10px] text-nex-mist">{mob}</div>
+                          </td>
+
+                          <td className="py-3.5 px-4 text-nex-mist text-[11px]">
+                            <div>{dateStr}</div>
+                            <div className="text-[9px]">{timeStr}</div>
+                          </td>
+
+                          <td className="py-3.5 px-4 text-right font-medium text-white/80">
+                            {formatRupees(taxable)}
+                          </td>
+
+                          <td className="py-3.5 px-4 text-right text-nex-mist">
+                            {gstTotal > 0 ? formatRupees(gstTotal) : "-"}
+                          </td>
+
+                          <td className="py-3.5 px-4 text-right font-bold text-nex-blueLight">
+                            {formatRupees(grand)}
+                          </td>
+
+                          <td className="py-3.5 px-4 text-center">
+                            <span
+                              className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${
+                                payStatus === "paid"
+                                  ? "bg-green-500/10 text-green-400 border border-green-500/20"
+                                  : payStatus === "partially_paid"
+                                  ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                                  : "bg-red-500/10 text-red-400 border border-red-500/20"
+                              }`}
+                            >
+                              {payStatus.replace("_", " ")}
+                            </span>
+                          </td>
+
+                          <td className="py-3.5 px-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setViewingInvoice(inv)}
+                                title="View Saved Invoice"
+                                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white text-xs"
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setViewingInvoice(inv);
+                                  setTimeout(() => handlePrint(inv), 100);
+                                }}
+                                title="Print Invoice"
+                                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white text-xs"
+                              >
+                                <Printer className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleShare(inv)}
+                                title="Share Invoice Link"
+                                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white text-xs"
+                              >
+                                <Share2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+        </div>
+      )}
+
+      {/* ── SAVED INVOICE VIEW MODAL ────────────────────────────────────────── */}
+      {viewingInvoice && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 overflow-y-auto">
+          <div
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            onClick={() => setViewingInvoice(null)}
+          />
+
+          <div className="relative glass-panel bg-nex-ink border border-white/10 rounded-2xl max-w-2xl w-full p-6 space-y-4 my-8 shadow-2xl">
+            
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2">
+                <Receipt className="h-5 w-5 text-nex-blueLight" />
+                <h3 className="font-display text-sm font-bold text-white">
+                  Invoice Details — {viewingInvoice.invoiceNumber || viewingInvoice.invoice_number}
+                </h3>
+              </div>
+              <button
+                onClick={() => setViewingInvoice(null)}
+                className="p-1 rounded-lg bg-white/5 hover:bg-white/10 text-nex-mist hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Modal Document Body */}
+            <div className="bg-white text-slate-900 rounded-xl p-6 shadow-md border border-slate-200 text-xs font-sans space-y-4 max-h-[70vh] overflow-y-auto">
+              <PrintableInvoiceDocument invoice={viewingInvoice} />
+            </div>
+
+            {/* Modal Action Buttons */}
+            <div className="flex items-center justify-between gap-3 pt-2">
+              <div className="text-[10px] text-nex-mist">
+                Created by: <strong className="text-white">{viewingInvoice.createdBy || "Admin"}</strong>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handlePrint(viewingInvoice)}
+                  className="btn-secondary !py-2 !px-4 text-xs flex items-center gap-1.5"
+                >
+                  <Printer className="h-3.5 w-3.5" /> Print
+                </button>
+                <button
+                  onClick={() => handleShare(viewingInvoice)}
+                  className="btn-primary !py-2 !px-4 text-xs flex items-center gap-1.5 shadow-glow-blue"
+                >
+                  <Share2 className="h-3.5 w-3.5" /> Share
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+/** ── PRINTABLE INVOICE DOCUMENT COMPONENT ───────────────────────────────── */
+function PrintableInvoiceDocument({ invoice }: { invoice: any }) {
+  const numStr = invoice.invoiceNumber || invoice.invoice_number || "NXT-2026-DRAFT";
+  const dateStr = invoice.invoiceDate || invoice.invoice_date || new Date().toISOString().split("T")[0];
+  const timeStr = invoice.invoiceTime || invoice.invoice_time || "";
+  const custName = invoice.customerName || invoice.customer_name || "Customer";
+  const mob = invoice.mobile || "";
+  const email = invoice.email || "";
+  const addr = invoice.address || "";
+  const city = invoice.city || "";
+  const state = invoice.state || "";
+  const pin = invoice.pincode || "";
+  const items = invoice.items || [];
+  const subtotal = Number(invoice.subtotal) || 0;
+  const globalDisc = Number(invoice.globalDiscount || invoice.global_discount) || 0;
+  const taxable = Number(invoice.taxableAmount || invoice.taxable_amount) || 0;
+  const gstEnabled = !!(invoice.gstEnabled ?? invoice.gst_enabled);
+  const gstin = invoice.gstin || "";
+  const cgst = Number(invoice.cgst) || 0;
+  const sgst = Number(invoice.sgst) || 0;
+  const gstTotal = Number(invoice.gstTotal || invoice.gst_total) || 0;
+  const grandTotal = Number(invoice.grandTotal || invoice.grand_total) || 0;
+  const payStatus = invoice.paymentStatus || invoice.payment_status || "pending";
+  const amountPaid = Number(invoice.amountPaid || invoice.amount_paid) || 0;
+  const balanceDue = Number(invoice.balanceDue || invoice.balance_due) || 0;
+
+  return (
+    <div id="invoice-print-area" className="w-full text-slate-900 bg-white font-sans text-xs space-y-4">
+      {/* Header */}
+      <div className="flex justify-between items-start border-b border-slate-200 pb-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <div className="relative h-8 w-8">
+              <Image
+                src="/images/logo-icon-transparent.png"
+                alt="NexByte"
+                fill
+                className="object-contain"
+              />
+            </div>
+            <span className="font-bold text-base tracking-tight text-slate-900">
+              NEX<span className="text-blue-600">BYTE</span> TECHNOLOGIES
+            </span>
+          </div>
+          <p className="text-[10px] text-slate-500 font-semibold">
+            Connecting Customers with Trusted Tech Experts
+          </p>
+          <p className="text-[9px] text-slate-400">
+            #372, 1st Floor, MK Puttalingaiah Road, Uttarahalli Main Road, Bengaluru 560070 | Ph: +91 8088979706
+          </p>
+        </div>
+
+        <div className="text-right space-y-1">
+          <span className="inline-block px-2.5 py-0.5 rounded bg-blue-100 text-blue-900 text-[10px] font-bold">
+            TAX INVOICE
+          </span>
+          <div className="text-sm font-bold text-slate-900">{numStr}</div>
+          <div className="text-[10px] text-slate-500">Date: {dateStr}</div>
+          {timeStr && <div className="text-[10px] text-slate-500">Time: {timeStr}</div>}
+        </div>
+      </div>
+
+      {/* Bill To */}
+      <div className="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded-lg border border-slate-200 text-[11px]">
+        <div>
+          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">
+            BILL TO:
+          </span>
+          <div className="font-bold text-slate-900">{custName}</div>
+          {mob && <div className="text-slate-600">Mobile: {mob}</div>}
+          {email && <div className="text-slate-600">Email: {email}</div>}
+        </div>
+        <div className="text-right">
+          {addr && <div className="text-slate-600">{addr}</div>}
+          <div className="text-slate-600">
+            {[city, state, pin].filter(Boolean).join(", ")}
+          </div>
+          {gstEnabled && gstin && (
+            <div className="mt-1 font-bold text-blue-700 text-[10px]">
+              GSTIN: {gstin}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Items Table */}
+      <table className="w-full text-[11px] text-left border-collapse">
+        <thead>
+          <tr className="border-b border-slate-200 bg-slate-100 text-slate-700 font-bold text-[10px]">
+            <th className="py-2 px-2">#</th>
+            <th className="py-2 px-2">Item Description</th>
+            <th className="py-2 px-2 text-center">Qty</th>
+            <th className="py-2 px-2 text-right">Unit Price</th>
+            <th className="py-2 px-2 text-right">Discount</th>
+            <th className="py-2 px-2 text-right">Amount</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {items.map((item: any, idx: number) => (
+            <tr key={idx} className="text-slate-700">
+              <td className="py-2 px-2 text-slate-400">{idx + 1}</td>
+              <td className="py-2 px-2">
+                <div className="font-semibold text-slate-900">{item.name}</div>
+                {item.description && <div className="text-[9px] text-slate-500">{item.description}</div>}
+              </td>
+              <td className="py-2 px-2 text-center font-medium">{item.quantity}</td>
+              <td className="py-2 px-2 text-right">{formatRupees(item.unitPrice)}</td>
+              <td className="py-2 px-2 text-right text-slate-500">
+                {item.discount > 0 ? formatRupees(item.discount) : "-"}
+              </td>
+              <td className="py-2 px-2 text-right font-bold text-slate-900">
+                {formatRupees(item.lineTotal)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* Totals */}
+      <div className="border-t border-slate-200 pt-3 flex justify-end">
+        <div className="w-full max-w-[240px] space-y-1.5 text-[11px]">
+          <div className="flex justify-between text-slate-600">
+            <span>Subtotal:</span>
+            <span className="font-medium text-slate-900">{formatRupees(subtotal)}</span>
+          </div>
+
+          {globalDisc > 0 && (
+            <div className="flex justify-between text-emerald-600">
+              <span>Global Discount:</span>
+              <span>-{formatRupees(globalDisc)}</span>
+            </div>
+          )}
+
+          <div className="flex justify-between text-slate-600 font-semibold border-t border-slate-100 pt-1">
+            <span>Taxable Amount:</span>
+            <span>{formatRupees(taxable)}</span>
+          </div>
+
+          {gstEnabled && (
+            <>
+              <div className="flex justify-between text-slate-500 text-[10px]">
+                <span>CGST (9%):</span>
+                <span>{formatRupees(cgst)}</span>
+              </div>
+              <div className="flex justify-between text-slate-500 text-[10px]">
+                <span>SGST (9%):</span>
+                <span>{formatRupees(sgst)}</span>
+              </div>
+              <div className="flex justify-between text-blue-700 font-medium text-[10px]">
+                <span>GST Total (18%):</span>
+                <span>{formatRupees(gstTotal)}</span>
+              </div>
+            </>
+          )}
+
+          <div className="flex justify-between text-sm font-bold text-slate-900 border-t-2 border-slate-900 pt-1.5">
+            <span>Grand Total:</span>
+            <span className="text-blue-700">{formatRupees(grandTotal)}</span>
+          </div>
+
+          <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 mt-2 space-y-1 text-[10px]">
+            <div className="flex justify-between">
+              <span className="text-slate-500">Payment Status:</span>
+              <span className="font-bold uppercase text-slate-900">{payStatus}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Amount Paid:</span>
+              <span className="font-semibold text-emerald-700">{formatRupees(amountPaid)}</span>
+            </div>
+            <div className="flex justify-between font-bold">
+              <span className="text-slate-700">Balance Due:</span>
+              <span className={balanceDue > 0 ? "text-amber-600" : "text-slate-900"}>
+                {formatRupees(balanceDue)}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="border-t border-slate-200 pt-3 text-[9px] text-slate-400 text-center space-y-0.5">
+        <p>Thank you for choosing NexByte Technologies!</p>
+        <p>Computers • Laptop Service • Gaming PCs • Bulk IT Hardware • CCTV Systems</p>
+      </div>
+    </div>
+  );
+}
