@@ -61,7 +61,7 @@ export default function PublicInvoiceViewPage({
     );
   }
 
-  const numStr = invoice.invoiceNumber || invoice.invoice_number || "NXT-2026-00000";
+  const numStr = invoice.invoiceNumber || invoice.invoice_number || "NEX-2026-0001";
   const dateStr = invoice.invoiceDate || invoice.invoice_date || "";
   const timeStr = invoice.invoiceTime || invoice.invoice_time || "";
   const custName = invoice.customerName || invoice.customer_name || "Customer";
@@ -133,7 +133,7 @@ export default function PublicInvoiceViewPage({
               <span className="inline-block px-2.5 py-0.5 rounded bg-blue-100 text-blue-900 text-[10px] font-bold">
                 TAX INVOICE
               </span>
-              <div className="text-sm font-bold text-slate-900">{numStr}</div>
+              <div className="text-xs font-bold text-slate-900">Invoice No: {numStr}</div>
               <div className="text-[10px] text-slate-500">Date: {dateStr}</div>
               {timeStr && <div className="text-[10px] text-slate-500">Time: {timeStr}</div>}
             </div>

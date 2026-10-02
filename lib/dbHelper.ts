@@ -335,7 +335,7 @@ if (!globalRef.__nexbyteMockDb) {
     invoices: [
       {
         id: "inv-1",
-        invoiceNumber: "NXT-2026-00001",
+        invoiceNumber: "NEX-2026-0001",
         customerId: "cust-1",
         customerName: "Ramesh Kumar",
         mobile: "9876543210",
@@ -387,12 +387,12 @@ if (!globalRef.__nexbyteMockDb) {
         createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
         updatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
         createdBy: "Admin Officer",
-        shareToken: "tok-nxt-2026-00001-sec",
+        shareToken: "tok-nex-2026-0001-sec",
         status: "active"
       },
       {
         id: "inv-2",
-        invoiceNumber: "NXT-2026-00002",
+        invoiceNumber: "NEX-2026-0002",
         customerId: null,
         customerName: "Suresh Patel",
         mobile: "9876501234",
@@ -2540,7 +2540,7 @@ export const dbHelper = {
 
     async generateNextNumber() {
       const year = new Date().getFullYear();
-      const prefix = `NXT-${year}-`;
+      const prefix = `NEX-${year}-`;
       let nextCounter = 1;
 
       if (supabase) {
@@ -2572,7 +2572,7 @@ export const dbHelper = {
         });
       }
 
-      const formattedCounter = String(nextCounter).padStart(5, "0");
+      const formattedCounter = String(nextCounter).padStart(4, "0");
       return `${prefix}${formattedCounter}`;
     },
 

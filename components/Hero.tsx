@@ -1,185 +1,202 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import Image from "next/image";
-import { motion } from "framer-motion";
-import { ArrowRight, ShieldCheck } from "lucide-react";
-import { business } from "@/lib/data";
-
-const PARTICLE_COUNT = 28;
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.1, delayChildren: 0.1 }
-  }
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 20, filter: "blur(8px)" },
-  visible: {
-    opacity: 1, 
-    y: 0, 
-    filter: "blur(0px)",
-    transition: { type: "spring", stiffness: 100, damping: 20 }
-  }
-};
+import { useRouter } from "next/navigation";
+import {
+  ShoppingBag,
+  Wrench,
+  Cpu,
+  Video,
+  Wifi,
+  MessageSquare,
+  ArrowRight,
+  Sparkles,
+  Laptop,
+  CheckCircle2,
+  Search,
+} from "lucide-react";
 
 export default function Hero() {
-  const rootRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
-  const [particles, setParticles] = useState<{size: number, left: number, top: number, delay: number, duration: number}[]>([]);
+  // 6 Primary Customer Action Cards
+  const primaryActionCards = [
+    {
+      title: "Buy a Computer",
+      desc: "Laptops, Gaming PCs, Monitors & Accessories with warranty",
+      icon: ShoppingBag,
+      color: "from-blue-500 to-indigo-600",
+      bgColor: "bg-blue-50 dark:bg-blue-950/40",
+      borderColor: "border-blue-200 dark:border-blue-800/40",
+      textColor: "text-blue-700 dark:text-blue-300",
+      href: "/products",
+    },
+    {
+      title: "Repair My Device",
+      desc: "Laptop repair, screen replacement, power & liquid damage diagnosis",
+      icon: Wrench,
+      color: "from-amber-500 to-orange-600",
+      bgColor: "bg-amber-50 dark:bg-amber-950/40",
+      borderColor: "border-amber-200 dark:border-amber-800/40",
+      textColor: "text-amber-700 dark:text-amber-300",
+      href: "/services?category=repair",
+    },
+    {
+      title: "Upgrade My Computer",
+      desc: "Speed up slow PCs with 1TB SSD & RAM upgrades in minutes",
+      icon: Cpu,
+      color: "from-emerald-500 to-teal-600",
+      bgColor: "bg-emerald-50 dark:bg-emerald-950/40",
+      borderColor: "border-emerald-200 dark:border-emerald-800/40",
+      textColor: "text-emerald-700 dark:text-emerald-300",
+      href: "/services?category=upgrade",
+    },
+    {
+      title: "Install CCTV",
+      desc: "Security camera setup for home, office & shop protection",
+      icon: Video,
+      color: "from-purple-500 to-violet-600",
+      bgColor: "bg-purple-50 dark:bg-purple-950/40",
+      borderColor: "border-purple-200 dark:border-purple-800/40",
+      textColor: "text-purple-700 dark:text-purple-300",
+      href: "/products?category=cctv",
+    },
+    {
+      title: "Fix My WiFi",
+      desc: "WiFi router setup, office networking & internet troubleshooting",
+      icon: Wifi,
+      color: "from-cyan-500 to-blue-600",
+      bgColor: "bg-cyan-50 dark:bg-cyan-950/40",
+      borderColor: "border-cyan-200 dark:border-cyan-800/40",
+      textColor: "text-cyan-700 dark:text-cyan-300",
+      href: "/services?category=wifi",
+    },
+    {
+      title: "Talk to an Expert",
+      desc: "Get free technical advice, quotes & doorstep support",
+      icon: MessageSquare,
+      color: "from-rose-500 to-pink-600",
+      bgColor: "bg-rose-50 dark:bg-rose-950/40",
+      borderColor: "border-rose-200 dark:border-rose-800/40",
+      textColor: "text-rose-700 dark:text-rose-300",
+      href: "/contact",
+    },
+  ];
 
-  useEffect(() => {
-    const newParticles = [];
-    for (let i = 0; i < PARTICLE_COUNT; i++) {
-      newParticles.push({
-        size: 2 + Math.random() * 3,
-        left: Math.random() * 100,
-        top: 20 + Math.random() * 60,
-        delay: Math.random() * 6,
-        duration: 8 + Math.random() * 10
-      });
-    }
-    setParticles(newParticles);
-  }, []);
+  // Popular Things Customers Do
+  const popularActions = [
+    { label: "Buy a Laptop", href: "/products?category=business_laptops" },
+    { label: "Repair a Laptop", href: "/services?category=repair" },
+    { label: "Upgrade RAM / SSD", href: "/services?category=upgrade" },
+    { label: "Build a Gaming PC", href: "/products?category=gaming_pcs" },
+    { label: "Install CCTV", href: "/products?category=cctv" },
+    { label: "Fix WiFi", href: "/services?category=wifi" },
+    { label: "Book a Service", href: "/services" },
+  ];
 
   return (
-    <section
-      id="home"
-      ref={rootRef}
-      className="relative flex min-h-[100svh] w-full items-center overflow-hidden bg-premium-mesh pt-32 pb-20"
-    >
-      <div className="pointer-events-none absolute inset-0 radial-glow-cyan opacity-20" />
-      <div className="pointer-events-none absolute -top-40 left-1/2 h-[600px] w-[600px] -translate-x-1/2 rounded-full bg-nex-blue/15 blur-[160px]" />
+    <section className="relative w-full pt-28 pb-16 px-4 sm:px-6 lg:px-8 bg-slate-50 dark:bg-slate-950 overflow-hidden">
+      {/* Soft Ambient Glow */}
+      <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 h-96 w-full max-w-7xl bg-gradient-to-b from-blue-100/60 dark:from-blue-950/30 to-transparent blur-3xl opacity-70" />
 
-      {/* Floating particles — Rendered purely from state to avoid hydration mismatch */}
-      <div id="hero-particles" className="pointer-events-none absolute inset-0 overflow-hidden">
-        {particles.map((p, i) => (
-          <span
-            key={i}
-            className="absolute rounded-full bg-nex-blueLight/60 animate-float"
-            style={{
-              width: `${p.size}px`,
-              height: `${p.size}px`,
-              left: `${p.left}%`,
-              top: `${p.top}%`,
-              animationDelay: `${p.delay}s`,
-              animationDuration: `${p.duration}s`,
-              boxShadow: "0 0 8px rgba(74,140,255,0.8)"
-            }}
-          />
-        ))}
-      </div>
+      <div className="relative z-10 mx-auto max-w-7xl">
+        {/* Customer Headline & Subtext */}
+        <div className="text-center max-w-3xl mx-auto mb-10">
+          <div className="inline-flex items-center gap-2 rounded-full bg-nex-blue/10 border border-nex-blue/20 px-3.5 py-1 text-xs font-bold text-nex-blue dark:text-nex-blueLight mb-4 shadow-sm">
+            <Sparkles className="h-3.5 w-3.5" />
+            <span>NexByte Technology Services</span>
+          </div>
 
-      <div className="relative z-10 mx-auto grid w-full max-w-7xl grid-cols-1 items-center gap-16 px-6 sm:px-12 lg:grid-cols-[1.1fr_0.9fr]">
-        {/* Copy column */}
-        <motion.div
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-        >
-          <motion.div variants={itemVariants} className="section-eyebrow">
-            <span className="h-1.5 w-1.5 rounded-full bg-nex-blueLight shadow-[0_0_8px_rgba(74,140,255,0.6)]" />
-            Bengaluru · Tumkur · Hiriyur (soon)
-          </motion.div>
+          <h1 className="font-display text-3xl sm:text-5xl lg:text-6xl font-extrabold text-slate-900 dark:text-white tracking-tight leading-tight">
+            How Can We Help You Today?
+          </h1>
 
-          <motion.h1
-            variants={itemVariants}
-            className="font-display text-[3rem] leading-[1.08] font-bold tracking-tight sm:text-6xl lg:text-[4.5rem]"
-          >
-            Premium Technology,
-            <br />
-            <span className="text-gradient-blue tracking-tighter">Engineered for Business.</span>
-          </motion.h1>
+          <p className="mt-3.5 text-sm sm:text-base text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
+            Buy computers, repair your device, upgrade your system, or book a service — NexByte makes it simple.
+          </p>
 
-          <motion.p
-            variants={itemVariants}
-            className="mt-8 max-w-xl text-[1.1rem] leading-relaxed text-white/60 sm:text-lg"
-          >
-            {business.description}
-          </motion.p>
-
-          <motion.div variants={itemVariants} className="mt-10 flex flex-wrap items-center gap-4">
+          {/* Quick Search Input */}
+          <div className="mt-6 max-w-xl mx-auto">
             <button
               onClick={() => {
-                window.dispatchEvent(new CustomEvent("nexbyte-open-booking-modal", { detail: { type: "service" } }));
+                const searchBtn = document.querySelector('button[aria-label="Smart Search"]') as HTMLButtonElement;
+                if (searchBtn) searchBtn.click();
               }}
-              className="btn-primary group py-3.5 px-8"
+              className="w-full flex items-center justify-between rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 px-4 py-3 text-xs sm:text-sm text-slate-400 dark:text-slate-500 shadow-lg hover:border-nex-blue transition-all"
             >
-              Book a Service
-              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+              <div className="flex items-center gap-3">
+                <Search className="h-4.5 w-4.5 text-nex-blue" />
+                <span>What are you looking for? (e.g. laptop, slow computer, wifi...)</span>
+              </div>
+              <span className="rounded-lg bg-slate-100 dark:bg-white/10 px-2.5 py-1 text-xs font-bold text-slate-600 dark:text-slate-300">
+                Search
+              </span>
             </button>
-            <button
-              onClick={() => {
-                window.dispatchEvent(new CustomEvent("nexbyte-open-booking-modal", { detail: { type: "product" } }));
-              }}
-              className="btn-secondary group py-3.5 px-8"
-            >
-              View Products
-            </button>
-          </motion.div>
-
-          <motion.div
-            variants={itemVariants}
-            className="mt-12 flex flex-wrap items-center gap-x-8 gap-y-3 text-[11px] font-medium text-white/40 uppercase tracking-wide"
-          >
-            <span className="inline-flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-nex-blueLight" /> Genuine Products
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-nex-blueLight" /> Warranty Included
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-nex-blueLight" /> Doorstep Support
-            </span>
-          </motion.div>
-        </motion.div>
-
-        {/* Glowing logo column */}
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95, filter: "blur(10px)" }}
-          animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-          transition={{ duration: 1, ease: "easeOut", delay: 0.3 }}
-          className="relative mx-auto flex items-center justify-center"
-        >
-          <div className="absolute h-72 w-72 rounded-full bg-nex-blue/30 blur-[90px] animate-pulse-glow sm:h-96 sm:w-96" />
-          <motion.div
-            animate={{ y: [0, -16, 0] }}
-            transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-            className="relative h-64 w-64 sm:h-80 sm:w-80 lg:h-96 lg:w-96"
-          >
-            <Image
-              src="/images/logo-icon-transparent.png"
-              alt="NexByte Technologies"
-              fill
-              sizes="(max-width: 768px) 256px, 384px"
-              className="object-contain drop-shadow-[0_0_60px_rgba(30,94,255,0.5)]"
-              priority
-            />
-          </motion.div>
-          {/* Orbiting ring accent */}
-          <div className="absolute h-[110%] w-[110%] rounded-full border border-nex-blue/20" />
-          <div className="absolute h-[125%] w-[125%] rounded-full border border-dashed border-nex-blue/10" />
-        </motion.div>
-      </div>
-
-      {/* Scroll indicator */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 1.2 }}
-        className="absolute bottom-8 left-1/2 -translate-x-1/2"
-      >
-        <div className="flex h-9 w-6 items-start justify-center rounded-full border border-white/20 p-1">
-          <motion.div
-            animate={{ y: [0, 12, 0], opacity: [1, 0.3, 1] }}
-            transition={{ duration: 1.8, repeat: Infinity }}
-            className="h-1.5 w-1.5 rounded-full bg-nex-blueLight"
-          />
+          </div>
         </div>
-      </motion.div>
+
+        {/* 6 Primary Action Cards Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 mb-12">
+          {primaryActionCards.map((card, idx) => {
+            const IconComp = card.icon;
+            return (
+              <div
+                key={idx}
+                onClick={() => router.push(card.href)}
+                className={`group cursor-pointer rounded-2xl p-5 border ${card.bgColor} ${card.borderColor} transition-all duration-200 hover:-translate-y-1 hover:shadow-lg flex flex-col justify-between relative overflow-hidden`}
+              >
+                <div>
+                  <div className={`h-12 w-12 rounded-xl bg-white dark:bg-slate-900 border ${card.borderColor} flex items-center justify-center mb-3.5 ${card.textColor} shadow-sm group-hover:scale-105 transition-transform`}>
+                    <IconComp className="h-6 w-6" />
+                  </div>
+                  <h3 className="font-display text-base sm:text-lg font-bold text-slate-900 dark:text-white mb-1">
+                    {card.title}
+                  </h3>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                    {card.desc}
+                  </p>
+                </div>
+
+                <div className="mt-4 pt-3 border-t border-slate-200/60 dark:border-white/10 flex items-center justify-between">
+                  <span className={`text-xs font-bold ${card.textColor}`}>Start Workflow</span>
+                  <ArrowRight className={`h-4 w-4 ${card.textColor} group-hover:translate-x-1 transition-transform`} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Popular Things Customers Do */}
+        <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 p-6 shadow-md text-center">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-4">
+            Popular Things Customers Do
+          </h2>
+
+          <div className="flex flex-wrap items-center justify-center gap-2.5">
+            {popularActions.map((act, i) => (
+              <button
+                key={i}
+                onClick={() => router.push(act.href)}
+                className="rounded-full bg-slate-100 hover:bg-nex-blue hover:text-white dark:bg-white/5 dark:hover:bg-nex-blue border border-slate-200 dark:border-white/10 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-all shadow-sm"
+              >
+                {act.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Trust Badges */}
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-6 text-xs text-slate-500 dark:text-slate-400 font-medium">
+          <span className="flex items-center gap-1.5">
+            <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Doorstep &amp; On-Site Support
+          </span>
+          <span className="flex items-center gap-1.5">
+            <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Verified Warranty Included
+          </span>
+          <span className="flex items-center gap-1.5">
+            <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Simple &amp; Fast Booking
+          </span>
+        </div>
+      </div>
     </section>
   );
 }

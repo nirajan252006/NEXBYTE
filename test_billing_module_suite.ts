@@ -117,8 +117,8 @@ async function runBillingSuite() {
   try {
     const next1 = await dbHelper.invoices.generateNextNumber();
     console.log("Generated Sequence Invoice Number:", next1);
-    if (next1.startsWith("NXT-") && next1.length === 14) {
-      console.log("PASS - TEST 6: Invoice Number Format NXT-YEAR-COUNTER");
+    if (next1.startsWith("NEX-") && next1.length === 13) {
+      console.log("PASS - TEST 6: Invoice Number Format NEX-YEAR-0001");
       passCount++;
     } else {
       console.error("FAIL - TEST 6:", next1);
@@ -208,8 +208,8 @@ async function runBillingSuite() {
 
   // TEST 15: Share Token Verification
   try {
-    const invTok = await dbHelper.invoices.getByShareToken("tok-nxt-2026-00001-sec");
-    if (invTok && invTok.invoiceNumber === "NXT-2026-00001") {
+    const invTok = await dbHelper.invoices.getByShareToken("tok-nex-2026-0001-sec");
+    if (invTok && invTok.invoiceNumber === "NEX-2026-0001") {
       console.log("PASS - TEST 15: Non-guessable Secure Share Token Access");
       passCount++;
     } else {

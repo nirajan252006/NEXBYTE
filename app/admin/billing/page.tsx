@@ -405,7 +405,7 @@ export default function AdminBillingPage() {
       <div className="hidden print:block print:fixed print:inset-0 print:bg-white print:text-black print:p-8 print:z-[99999] bg-white text-black p-8">
         <PrintableInvoiceDocument
           invoice={viewingInvoice || {
-            invoiceNumber: "NXT-2026-DRAFT",
+            invoiceNumber: "NEX-2026-PREVIEW",
             invoiceDate: new Date().toISOString().split("T")[0],
             invoiceTime: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }),
             customerName,
@@ -959,7 +959,7 @@ export default function AdminBillingPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleDownloadPdf("NXT-2026-DRAFT")}
+                  onClick={() => handleDownloadPdf("NEX-2026-PREVIEW")}
                   title="Download PDF"
                   className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white text-xs flex items-center gap-1.5 transition-all"
                 >
@@ -969,7 +969,7 @@ export default function AdminBillingPage() {
                   type="button"
                   onClick={() =>
                     handleShare({
-                      invoiceNumber: "NXT-2026-DRAFT",
+                      invoiceNumber: "NEX-2026-PREVIEW",
                       customerName,
                       grandTotal: calculatedTotals.grandTotal
                     })
@@ -1013,7 +1013,7 @@ export default function AdminBillingPage() {
                   <span className="inline-block px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-[10px] font-bold">
                     TAX INVOICE
                   </span>
-                  <div className="text-[11px] font-bold text-slate-800">NXT-2026-PREVIEW</div>
+                  <div className="text-[11px] font-bold text-slate-800">Invoice No: NEX-2026-PREVIEW</div>
                   <div className="text-[9px] text-slate-500">Date: {new Date().toLocaleDateString("en-IN")}</div>
                   <div className="text-[9px] text-slate-500">
                     Time: {new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true })}
@@ -1394,7 +1394,7 @@ export default function AdminBillingPage() {
 
 /** ── PRINTABLE INVOICE DOCUMENT COMPONENT ───────────────────────────────── */
 function PrintableInvoiceDocument({ invoice }: { invoice: any }) {
-  const numStr = invoice.invoiceNumber || invoice.invoice_number || "NXT-2026-DRAFT";
+  const numStr = invoice.invoiceNumber || invoice.invoice_number || "NEX-2026-PREVIEW";
   const dateStr = invoice.invoiceDate || invoice.invoice_date || new Date().toISOString().split("T")[0];
   const timeStr = invoice.invoiceTime || invoice.invoice_time || "";
   const custName = invoice.customerName || invoice.customer_name || "Customer";
@@ -1448,7 +1448,7 @@ function PrintableInvoiceDocument({ invoice }: { invoice: any }) {
           <span className="inline-block px-2.5 py-0.5 rounded bg-blue-100 text-blue-900 text-[10px] font-bold">
             TAX INVOICE
           </span>
-          <div className="text-sm font-bold text-slate-900">{numStr}</div>
+          <div className="text-xs font-bold text-slate-900">Invoice No: {numStr}</div>
           <div className="text-[10px] text-slate-500">Date: {dateStr}</div>
           {timeStr && <div className="text-[10px] text-slate-500">Time: {timeStr}</div>}
         </div>

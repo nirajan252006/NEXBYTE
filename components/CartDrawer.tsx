@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { useCartStore } from "@/lib/cartStore";
-import { ShoppingBag, X, Trash2, Plus, Minus, ArrowRight, CheckCircle2, Loader2, Sparkles } from "lucide-react";
+import { ShoppingBag, X, Trash2, Plus, Minus, ArrowRight, CheckCircle2, Loader2, Sparkles, Tag } from "lucide-react";
 import { getSafeImageSrc } from "@/lib/utils";
 import { dbHelper } from "@/lib/dbHelper";
-import Link from "next/link";
+import { safeJsonFetch } from "@/lib/apiHelper";
 
 export default function CartDrawer() {
   const { items, isOpen, closeCart, removeItem, updateQuantity, clearCart, getTotal, getItemCount } = useCartStore();
@@ -19,7 +19,80 @@ export default function CartDrawer() {
   const [submitting, setSubmitting] = useState(false);
   const [completedOrder, setCompletedOrder] = useState<any | null>(null);
 
+  // Referral / Promo Offer State
+  const [promoCodeInput, setPromoCodeInput] = useState("");
+  const [appliedOffer, setAppliedOffer] = useState<{
+    code: string;
+    discount_value: number;
+    discount_type: "percentage" | "flat";
+    title: string;
+  } | null>(null);
+  const [promoError, setPromoError] = useState("");
+  const [promoSuccess, setPromoSuccess] = useState("");
+  const [validatingPromo, setValidatingPromo] = useState(false);
+
   if (!isOpen) return null;
+
+  const subtotal = getTotal();
+
+  // Calculate discount according to rule: Subtotal -> Offer Discount -> Grand Total
+  let discountAmount = 0;
+  if (appliedOffer) {
+    if (appliedOffer.discount_type === "percentage") {
+      discountAmount = Math.round((subtotal * appliedOffer.discount_value) / 100);
+    } else {
+      discountAmount = Math.min(subtotal, appliedOffer.discount_value);
+    }
+  }
+
+  const grandTotal = Math.max(0, subtotal - discountAmount);
+
+  const handleApplyPromoCode = async () => {
+    if (!promoCodeInput.trim()) {
+      setPromoError("Please enter a referral or offer code.");
+      return;
+    }
+
+    setValidatingPromo(true);
+    setPromoError("");
+    setPromoSuccess("");
+
+    try {
+      const res = await safeJsonFetch("/api/offers/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: promoCodeInput.trim(),
+          amount: subtotal,
+        }),
+      });
+
+      if (!res.ok || !res.data?.valid) {
+        setPromoError(res.data?.message || res.error || "Invalid or expired referral code.");
+        setAppliedOffer(null);
+      } else {
+        const offer = res.data.offer;
+        setAppliedOffer({
+          code: offer.code,
+          discount_value: Number(offer.discount_value),
+          discount_type: offer.discount_type,
+          title: offer.title,
+        });
+        setPromoSuccess(`Referral code applied — ${res.data.discount_label || "Discount Applied"}`);
+        setPromoCodeInput("");
+      }
+    } catch (e: any) {
+      setPromoError("Failed to validate code. Please try again.");
+    } finally {
+      setValidatingPromo(false);
+    }
+  };
+
+  const handleRemovePromo = () => {
+    setAppliedOffer(null);
+    setPromoSuccess("");
+    setPromoError("");
+  };
 
   const handleCheckoutSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,6 +110,10 @@ export default function CartDrawer() {
         customer_phone: customerPhone,
         shipping_address: shippingAddress,
         payment_method: paymentMethod,
+        applied_offer_code: appliedOffer ? appliedOffer.code : null,
+        subtotal: subtotal,
+        discount_amount: discountAmount,
+        total: grandTotal,
         items: items.map((i) => ({
           product_id: i.productId,
           title: i.title,
@@ -44,7 +121,6 @@ export default function CartDrawer() {
           quantity: i.quantity,
           image: i.image,
         })),
-        total: getTotal(),
         status: "pending",
       };
 
@@ -68,23 +144,23 @@ export default function CartDrawer() {
   return (
     <div className="fixed inset-0 z-[100] flex justify-end">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onClick={handleClose} />
+      <div className="absolute inset-0 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm transition-opacity" onClick={handleClose} />
 
       {/* Drawer Panel */}
-      <div className="relative w-full max-w-md bg-nex-ink border-l border-white/10 h-full flex flex-col justify-between shadow-2xl z-10 overflow-hidden">
+      <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-white/10 h-full flex flex-col justify-between shadow-2xl z-10 overflow-hidden text-slate-900 dark:text-white">
         
         {/* Header */}
-        <div className="p-5 border-b border-white/10 flex items-center justify-between bg-nex-black/50">
+        <div className="p-5 border-b border-slate-200 dark:border-white/10 flex items-center justify-between bg-slate-50 dark:bg-slate-950">
           <div className="flex items-center gap-2.5">
-            <div className="h-9 w-9 rounded-xl bg-nex-blue/10 border border-nex-blue/20 text-nex-blueLight flex items-center justify-center">
+            <div className="h-9 w-9 rounded-xl bg-nex-blue/10 border border-nex-blue/20 text-nex-blue dark:text-nex-blueLight flex items-center justify-center">
               <ShoppingBag className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="font-display text-sm font-bold text-white">Your Shopping Cart</h3>
-              <p className="text-[10px] text-nex-mist">{getItemCount()} item(s) selected</p>
+              <h3 className="font-display text-sm font-bold">Your Shopping Cart</h3>
+              <p className="text-[10px] text-slate-500">{getItemCount()} item(s) selected</p>
             </div>
           </div>
-          <button onClick={handleClose} className="p-1.5 rounded-lg text-nex-mist hover:text-white hover:bg-white/10">
+          <button onClick={handleClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -93,129 +169,176 @@ export default function CartDrawer() {
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           {completedOrder ? (
             <div className="text-center py-8 space-y-4">
-              <div className="h-16 w-16 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto shadow-glow-blue animate-bounce">
+              <div className="h-16 w-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 flex items-center justify-center mx-auto shadow-md">
                 <CheckCircle2 className="h-8 w-8" />
               </div>
               <div>
-                <h4 className="font-display text-lg font-bold text-white">Order Confirmed!</h4>
-                <p className="text-xs text-nex-mist mt-1 leading-relaxed">
+                <h4 className="font-display text-lg font-bold">Order Confirmed!</h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
                   Thank you for ordering with NexByte Technologies.
                 </p>
               </div>
 
-              <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 text-left space-y-1.5 text-xs">
-                <div className="text-[10px] text-nex-mist font-bold uppercase">Order Reference Number</div>
-                <div className="font-mono text-base font-bold text-nex-blueLight">{completedOrder.id}</div>
-                <div className="text-nex-mist text-[11px]">Total Amount: <span className="text-white font-bold">Rs. {(completedOrder.total || 0).toLocaleString("en-IN")}</span></div>
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 text-left space-y-1.5 text-xs">
+                <div className="text-[10px] text-slate-500 font-bold uppercase">Order Reference Number</div>
+                <div className="font-mono text-base font-bold text-nex-blue dark:text-nex-blueLight">{completedOrder.id}</div>
+                <div className="text-slate-600 dark:text-slate-400 text-[11px]">
+                  Total Amount Paid: <span className="font-bold text-slate-900 dark:text-white">₹{(completedOrder.total || 0).toLocaleString("en-IN")}</span>
+                </div>
               </div>
 
               <div className="pt-4 flex flex-col gap-2">
                 <a
-                  href={`/track?search=${encodeURIComponent(completedOrder.id)}`}
+                  href={`/customer/requests`}
                   onClick={handleClose}
-                  className="btn-primary !py-2.5 text-xs flex items-center justify-center gap-2"
+                  className="rounded-xl bg-nex-blue text-white py-2.5 text-xs font-bold flex items-center justify-center gap-2 shadow-sm"
                 >
                   Track Order Status <ArrowRight className="h-4 w-4" />
                 </a>
-                <button onClick={handleClose} className="btn-secondary !py-2 text-xs">
+                <button onClick={handleClose} className="rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 py-2 text-xs font-bold text-slate-700 dark:text-slate-300">
                   Continue Shopping
                 </button>
               </div>
             </div>
           ) : isCheckingOut ? (
             <form onSubmit={handleCheckoutSubmit} className="space-y-4 text-xs">
-              <div className="flex items-center justify-between pb-2 border-b border-white/10">
-                <span className="font-bold text-white uppercase text-[11px] tracking-wider">Customer Delivery Details</span>
+              <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-white/10">
+                <span className="font-bold uppercase text-[11px] tracking-wider text-slate-700 dark:text-slate-300">Customer Delivery Details</span>
                 <button
                   type="button"
                   onClick={() => setIsCheckingOut(false)}
-                  className="text-nex-blueLight hover:underline text-[11px]"
+                  className="text-nex-blue dark:text-nex-blueLight hover:underline text-[11px]"
                 >
                   ← Back to Cart
                 </button>
               </div>
 
               <div className="space-y-1">
-                <label className="text-white/80 font-semibold">Full Name *</label>
+                <label className="font-semibold text-slate-700 dark:text-slate-300">Full Name *</label>
                 <input
                   type="text"
                   required
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
                   placeholder="e.g. Rahul Verma"
-                  className="w-full rounded-xl bg-white/[0.03] border border-white/10 px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-nex-blue"
+                  className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 px-3.5 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-nex-blue"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-white/80 font-semibold">Phone Number *</label>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300">Phone Number *</label>
                   <input
                     type="tel"
                     required
                     value={customerPhone}
                     onChange={(e) => setCustomerPhone(e.target.value)}
                     placeholder="e.g. 9876543210"
-                    className="w-full rounded-xl bg-white/[0.03] border border-white/10 px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-nex-blue"
+                    className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 px-3.5 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-nex-blue"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-white/80 font-semibold">Email Address</label>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300">Email Address</label>
                   <input
                     type="email"
                     value={customerEmail}
                     onChange={(e) => setCustomerEmail(e.target.value)}
                     placeholder="rahul@gmail.com"
-                    className="w-full rounded-xl bg-white/[0.03] border border-white/10 px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-nex-blue"
+                    className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 px-3.5 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-nex-blue"
                   />
                 </div>
               </div>
 
               <div className="space-y-1">
-                <label className="text-white/80 font-semibold">Delivery Address *</label>
+                <label className="font-semibold text-slate-700 dark:text-slate-300">Delivery Address *</label>
                 <textarea
                   required
-                  rows={3}
+                  rows={2}
                   value={shippingAddress}
                   onChange={(e) => setShippingAddress(e.target.value)}
                   placeholder="House/Flat No., Building Name, Street, City, Pincode"
-                  className="w-full rounded-xl bg-white/[0.03] border border-white/10 px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-nex-blue resize-none"
+                  className="w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 px-3.5 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-nex-blue resize-none"
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="text-white/80 font-semibold">Payment Option</label>
-                <select
-                  value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value)}
-                  className="w-full rounded-xl bg-nex-ink border border-white/10 px-3.5 py-2.5 text-xs text-white focus:outline-none"
-                >
-                  <option value="COD">Cash / Pay on Delivery (COD)</option>
-                  <option value="UPI">UPI / GPay / PhonePe</option>
-                  <option value="Card">Credit / Debit Card</option>
-                  <option value="NetBanking">Net Banking</option>
-                </select>
+              {/* Referral / Promo Code Section */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 space-y-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-white">
+                  <Tag className="h-3.5 w-3.5 text-nex-blue" />
+                  <span>Have a referral code?</span>
+                </div>
+
+                {appliedOffer ? (
+                  <div className="flex items-center justify-between p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs">
+                    <div>
+                      <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{appliedOffer.code}</span>
+                      <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Referral code applied — {appliedOffer.title}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRemovePromo}
+                      className="text-xs text-rose-500 font-bold hover:underline"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={promoCodeInput}
+                      onChange={(e) => setPromoCodeInput(e.target.value)}
+                      placeholder="Enter promo / referral code"
+                      className="flex-1 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 px-3 py-1.5 text-xs uppercase font-mono"
+                    />
+                    <button
+                      type="button"
+                      disabled={validatingPromo}
+                      onClick={handleApplyPromoCode}
+                      className="rounded-xl bg-nex-blue hover:bg-blue-600 text-white font-bold px-3 py-1.5 text-xs shadow-sm shrink-0"
+                    >
+                      {validatingPromo ? "Checking..." : "Apply"}
+                    </button>
+                  </div>
+                )}
+
+                {promoError && (
+                  <p className="text-[11px] font-bold text-rose-500">{promoError}</p>
+                )}
+                {promoSuccess && !appliedOffer && (
+                  <p className="text-[11px] font-bold text-emerald-500">{promoSuccess}</p>
+                )}
               </div>
 
-              <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/10 space-y-1.5">
-                <div className="flex justify-between text-nex-mist">
+              {/* Order Summary & Pricing Breakdown */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 space-y-1.5">
+                <div className="flex justify-between text-slate-600 dark:text-slate-400">
                   <span>Subtotal ({getItemCount()} items)</span>
-                  <span className="text-white font-semibold">Rs. {getTotal().toLocaleString("en-IN")}</span>
+                  <span className="font-semibold text-slate-900 dark:text-white">₹{subtotal.toLocaleString("en-IN")}</span>
                 </div>
-                <div className="flex justify-between text-nex-mist">
-                  <span>Standard Shipping</span>
-                  <span className="text-emerald-400 font-semibold">FREE</span>
+
+                {appliedOffer && (
+                  <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-semibold">
+                    <span>Offer Discount ({appliedOffer.code})</span>
+                    <span>- ₹{discountAmount.toLocaleString("en-IN")}</span>
+                  </div>
+                )}
+
+                <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                  <span>Doorstep Delivery</span>
+                  <span className="text-emerald-600 dark:text-emerald-400 font-semibold">FREE</span>
                 </div>
-                <div className="flex justify-between text-white font-bold pt-1.5 border-t border-white/10 text-sm">
-                  <span>Total Pay</span>
-                  <span className="text-nex-blueLight">Rs. {getTotal().toLocaleString("en-IN")}</span>
+
+                <div className="flex justify-between text-slate-900 dark:text-white font-bold pt-1.5 border-t border-slate-200 dark:border-white/10 text-sm">
+                  <span>Grand Total</span>
+                  <span className="text-nex-blue dark:text-nex-blueLight">₹{grandTotal.toLocaleString("en-IN")}</span>
                 </div>
               </div>
 
               <button
                 type="submit"
                 disabled={submitting}
-                className="btn-primary w-full !py-3 text-xs flex items-center justify-center gap-2 shadow-glow-blue"
+                className="w-full rounded-xl bg-nex-blue hover:bg-blue-600 text-white font-bold py-3 text-xs shadow-md flex items-center justify-center gap-2"
               >
                 {submitting ? (
                   <>
@@ -223,21 +346,21 @@ export default function CartDrawer() {
                   </>
                 ) : (
                   <>
-                    <Sparkles className="h-4 w-4 text-amber-300" /> Confirm Order (Rs. {getTotal().toLocaleString("en-IN")})
+                    <Sparkles className="h-4 w-4" /> Confirm Order (₹{grandTotal.toLocaleString("en-IN")})
                   </>
                 )}
               </button>
             </form>
           ) : items.length === 0 ? (
             <div className="text-center py-16 space-y-3">
-              <ShoppingBag className="h-12 w-12 text-nex-mist mx-auto" />
-              <p className="text-sm font-semibold text-white">Your cart is currently empty</p>
-              <p className="text-xs text-nex-mist max-w-xs mx-auto">
-                Explore our hardware catalog to add gaming PCs, laptops, and accessories.
+              <ShoppingBag className="h-12 w-12 text-slate-300 mx-auto" />
+              <p className="text-sm font-semibold">Your cart is empty</p>
+              <p className="text-xs text-slate-500 max-w-xs mx-auto">
+                Explore our catalog to add gaming PCs, laptops, and accessories.
               </p>
               <button
                 onClick={handleClose}
-                className="btn-primary !py-2 !px-5 text-xs mt-2"
+                className="rounded-full bg-nex-blue text-white px-5 py-2 text-xs font-bold mt-2 shadow-sm"
               >
                 Browse Catalog
               </button>
@@ -247,31 +370,31 @@ export default function CartDrawer() {
               {items.map((item) => (
                 <div
                   key={item.id}
-                  className="rounded-xl border border-white/10 bg-white/[0.02] p-3 flex gap-3 items-center"
+                  className="rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-950 p-3 flex gap-3 items-center"
                 >
                   <img
                     src={getSafeImageSrc(item.image)}
                     alt={item.title}
-                    className="h-14 w-14 object-contain rounded-lg bg-white/5 border border-white/5 p-1 shrink-0"
+                    className="h-14 w-14 object-contain rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 p-1 shrink-0"
                   />
                   <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-xs text-white truncate">{item.title}</div>
-                    <div className="text-xs font-bold text-nex-blueLight mt-0.5">
-                      Rs. {(item.price * item.quantity).toLocaleString("en-IN")}
+                    <div className="font-semibold text-xs truncate">{item.title}</div>
+                    <div className="text-xs font-bold text-nex-blue dark:text-nex-blueLight mt-0.5">
+                      ₹{(item.price * item.quantity).toLocaleString("en-IN")}
                     </div>
 
                     <div className="flex items-center gap-2 mt-2">
-                      <div className="flex items-center bg-white/5 border border-white/10 rounded-lg p-0.5">
+                      <div className="flex items-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 rounded-lg p-0.5">
                         <button
                           onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                          className="p-1 hover:bg-white/10 rounded text-white"
+                          className="p-1 hover:bg-slate-100 dark:hover:bg-white/10 rounded text-slate-700 dark:text-slate-300"
                         >
                           <Minus className="h-3 w-3" />
                         </button>
-                        <span className="px-2 text-[11px] font-bold text-white">{item.quantity}</span>
+                        <span className="px-2 text-[11px] font-bold">{item.quantity}</span>
                         <button
                           onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                          className="p-1 hover:bg-white/10 rounded text-white"
+                          className="p-1 hover:bg-slate-100 dark:hover:bg-white/10 rounded text-slate-700 dark:text-slate-300"
                         >
                           <Plus className="h-3 w-3" />
                         </button>
@@ -279,7 +402,7 @@ export default function CartDrawer() {
 
                       <button
                         onClick={() => removeItem(item.id)}
-                        className="text-red-400 hover:text-red-300 p-1 rounded hover:bg-red-500/10 text-xs flex items-center gap-1 ml-auto"
+                        className="text-rose-500 hover:text-rose-600 p-1 rounded hover:bg-rose-50 text-xs flex items-center gap-1 ml-auto"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -293,17 +416,17 @@ export default function CartDrawer() {
 
         {/* Footer Checkout Bar */}
         {!isCheckingOut && !completedOrder && items.length > 0 && (
-          <div className="p-5 border-t border-white/10 bg-nex-black/50 space-y-3">
+          <div className="p-5 border-t border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-950 space-y-3">
             <div className="flex justify-between items-center text-xs">
-              <span className="text-nex-mist">Total Amount</span>
-              <span className="font-display text-lg font-bold text-white">
-                Rs. {getTotal().toLocaleString("en-IN")}
+              <span className="text-slate-500">Subtotal Amount</span>
+              <span className="font-display text-lg font-extrabold text-nex-blue dark:text-white">
+                ₹{subtotal.toLocaleString("en-IN")}
               </span>
             </div>
 
             <button
               onClick={() => setIsCheckingOut(true)}
-              className="btn-primary w-full !py-3 text-xs flex items-center justify-center gap-2 shadow-glow-blue"
+              className="w-full rounded-xl bg-nex-blue hover:bg-blue-600 text-white font-bold py-3 text-xs shadow-md flex items-center justify-center gap-2"
             >
               Proceed to Checkout <ArrowRight className="h-4 w-4" />
             </button>

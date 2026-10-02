@@ -5,24 +5,24 @@ export const business = {
   name: "NexByte Technologies",
   tagline: "Engineering Tomorrow's Technology, Today.",
   description:
-    "Bengaluru's trusted destination for premium computers, laptops, CCTV systems, and end-to-end IT services — built on genuine components, tested reliability, and doorstep support.",
+    "Your trusted destination for fast computer sales, laptop repair, CCTV installation, and doorstep IT support across Karnataka.",
   phones: ["+91 8088979706", "+91 8904760125"],
   phoneLinks: ["+918088979706", "+918904760125"],
   email: "nexbytetechnologies@gmail.com",
   instagram: "https://instagram.com/nexbytetechnologies",
   instagramHandle: "@nexbytetechnologies",
   whatsappChannel: "https://whatsapp.com/channel/0029Vb5jdLWL7UVVMBX23s2d",
+  serviceAreas: ["Bengaluru", "Tumkur", "Hiriyur (Coming Soon)"],
   address: {
-    line1: "#372, 1st Floor, MK Puttalingaiah Road,",
-    line2: "Uttarahalli Main Road, Padmanabhanagar,",
-    city: "Bengaluru – 560070",
-    mapsQuery:
-      "NexByte+Technologies+372+MK+Puttalingaiah+Road+Uttarahalli+Padmanabhanagar+Bengaluru+560070",
+    line1: "Service Areas: Bengaluru | Tumkur | Hiriyur — Coming Soon",
+    line2: "Doorstep & On-Site Support",
+    city: "Karnataka, India",
+    mapsQuery: "NexByte+Technologies+Karnataka",
   },
   branches: [
-    { name: "Bengaluru (Head Office)", location: "#372, 1st Floor, MK Puttalingaiah Road, Uttarahalli Main Road, Padmanabhanagar, Bengaluru - 560070", status: "active" },
+    { name: "Bengaluru Service Area", location: "Bengaluru & Surrounding Regions", status: "active" },
     { name: "Tumkur Branch", location: "Upparahalli, Tumkur - 572101", status: "active" },
-    { name: "Hiriyur Branch", location: "Hiriyur, Karnataka (Opening Soon)", status: "opening-soon" },
+    { name: "Hiriyur Branch", location: "Hiriyur, Karnataka (Coming Soon)", status: "opening-soon" },
   ],
   hours: [
     { day: "Monday – Saturday", time: "9:30 AM – 8:30 PM" },
